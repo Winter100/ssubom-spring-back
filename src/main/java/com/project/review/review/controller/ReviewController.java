@@ -38,9 +38,10 @@ public class ReviewController {
     @GetMapping
     public ResponseEntity<ReviewPageResponse> findAll(
             @RequestParam(name = "page", defaultValue = "1") int page,
-            @RequestParam(name = "size", defaultValue = "50") int size
+            @RequestParam(name = "size", defaultValue = "50") int size,
+            @AuthenticationPrincipal Jwt jwt
     ) {
-        return ResponseEntity.ok(reviewService.findAll(page, size));
+        return ResponseEntity.ok(reviewService.findAll(page, size, jwt));
     }
 
     @Operation(summary = "리뷰 상세 조회", description = "인증 없이 조회합니다. 방문자 쿠키 기준으로 한국 시간 하루 1회 조회수가 증가합니다.")
@@ -53,14 +54,15 @@ public class ReviewController {
     public ResponseEntity<ReviewResponse> findById(
             @Parameter(description = "리뷰 ID", example = "1") @PathVariable("id") Long id,
             @CookieValue(name = "reviewVisitorId", required = false) String visitorCookie,
-            HttpServletRequest request
+            HttpServletRequest request,
+            @AuthenticationPrincipal Jwt jwt
     ) {
         UUID visitorId = parseVisitorId(visitorCookie);
         boolean issueCookie = visitorId == null;
         if (issueCookie) {
             visitorId = UUID.randomUUID();
         }
-        ReviewResponse review = reviewService.findByIdAndCountView(id, visitorId);
+        ReviewResponse review = reviewService.findByIdAndCountView(id, visitorId, jwt);
         ResponseEntity.BodyBuilder response = ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store");
         if (issueCookie) {
             ResponseCookie cookie = ResponseCookie.from("reviewVisitorId", visitorId.toString())
@@ -128,6 +130,28 @@ public class ReviewController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         reviewService.remove(id, jwt);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    // 리뷰 도움됐어요 등록
+    @PutMapping("/{id}/like")
+    public ResponseEntity<Void> like(
+            @PathVariable("id") Long reviewId,
+            @AuthenticationPrincipal Jwt jwt
+    ){
+        reviewService.insertLike(reviewId, jwt);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    // 리뷰 도움됐어요 제거
+    @DeleteMapping("/{id}/like")
+    public ResponseEntity<Void> deleteLike(
+            @PathVariable("id") Long reviewId,
+            @AuthenticationPrincipal Jwt jwt
+    ){
+        reviewService.deleteLike(reviewId, jwt);
 
         return ResponseEntity.noContent().build();
     }

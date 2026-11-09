@@ -58,12 +58,19 @@ public class ReviewService {
     private final Clock reviewViewClock;
     private final ReviewImageKeys reviewImageKeys;
     private final Clock imageDeletionClock;
+    private final ReviewLikeService reviewLikeService;
 
     /**
      * 1부터 시작하는 요청 페이지를 JPA의 0 기반 페이지로 변환합니다.
      */
     @Transactional(readOnly = true)
     public ReviewPageResponse findAll(int page, int size) {
+        return findAll(page, size, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ReviewPageResponse findAll(int page, int size, Jwt jwt) {
+        Long memberId = jwt == null ? null : tokenService.extractMemberId(jwt);
         if (page < 1) {
             throw new IllegalArgumentException("페이지는 1 이상이어야 합니다.");
         }
@@ -77,10 +84,11 @@ public class ReviewService {
                 Sort.by(Sort.Direction.DESC, "createdAt", "id")
         );
         Page<ReviewSummaryResponse> reviews = reviewRepository.findAllSummaries(pageable);
-        Map<Long, Long> counts = reviewViewRepository.findCounts(
-                reviews.getContent().stream().map(ReviewSummaryResponse::id).toList());
+        List<Long> reviewIds = reviews.getContent().stream().map(ReviewSummaryResponse::id).toList();
+        Map<Long, Long> counts = reviewViewRepository.findCounts(reviewIds);
+        Set<Long> likedReviewIds = reviewLikeService.findLikedReviewIds(memberId, reviewIds);
         return ReviewPageResponse.from(reviews.map(review ->
-                review.withViewCount(counts.getOrDefault(review.id(), 0L))));
+                review.withViewCountAndLiked(counts.getOrDefault(review.id(), 0L), likedReviewIds.contains(review.id()))));
     }
 
     /**
@@ -94,12 +102,18 @@ public class ReviewService {
     /** 방문 기록과 누적 증가를 같은 트랜잭션으로 처리합니다. */
     @Transactional
     public ReviewResponse findByIdAndCountView(Long reviewId, UUID visitorId) {
+        return findByIdAndCountView(reviewId, visitorId, null);
+    }
+
+    @Transactional
+    public ReviewResponse findByIdAndCountView(Long reviewId, UUID visitorId, Jwt jwt) {
         Review review = findReviewById(reviewId);
         LocalDate date = LocalDate.now(reviewViewClock.withZone(ZoneId.of("Asia/Seoul")));
         if (reviewViewRepository.insertDailyView(reviewId, visitorId, date)) {
             reviewViewRepository.increment(reviewId);
         }
-        return toResponse(review);
+        Long memberId = jwt == null ? null : tokenService.extractMemberId(jwt);
+        return toResponse(review, null, reviewLikeService.isLike(reviewId, memberId));
     }
 
     /**
@@ -205,6 +219,24 @@ public class ReviewService {
 
         // 리뷰 삭제
         reviewRepository.delete(review);
+    }
+
+    // 리뷰 "도움이 됐어요" 추가
+    @Transactional
+    public void insertLike(Long reviewId, Jwt jwt) {
+        Long memberId = tokenService.extractMemberId(jwt);
+        Member member = memberService.findById(memberId);
+        Review review = findReviewById(reviewId);
+        reviewLikeService.insertLike(review, member);
+    }
+
+    // 리뷰 "도움이 됐어요" 제거
+    @Transactional
+    public void deleteLike(Long reviewId, Jwt jwt) {
+        Long memberId = tokenService.extractMemberId(jwt);
+        Member member = memberService.findById(memberId);
+        Review review = findReviewById(reviewId);
+        reviewLikeService.deleteLike(review, member);
     }
 
     // 리뷰 저장
@@ -317,6 +349,10 @@ public class ReviewService {
     }
 
     private ReviewResponse toResponse(Review review, Long count) {
+        return toResponse(review, count, false);
+    }
+
+    private ReviewResponse toResponse(Review review, Long count, boolean isLike) {
         List<ReviewImage> images = review.getImages();
 
         String mainImageKey = images.stream()
@@ -333,6 +369,6 @@ public class ReviewService {
         // count가 null이면 조회, 아니면 전달받은 값 사용
         long viewCount = (count != null && count >= 0) ? count : reviewViewRepository.findCount(review.getId());
 
-        return ReviewResponse.from(review, mainImageKey, subImageKeys, viewCount);
+        return ReviewResponse.from(review, mainImageKey, subImageKeys, viewCount, isLike);
     }
 }

@@ -26,11 +26,16 @@ public record ReviewResponse(
         String mainImageKey,
         List<String> subImageKeys,
         MemberSummaryResponse author,
-        long viewCount
+        long viewCount,
+        boolean isLike
 ) {
 
     // 공개 URL 생성은 서비스가 담당하고, DTO는 응답 필드 변환만 수행합니다.
     public static ReviewResponse from(Review review, String mainImageKey, List<String> subImageKeys, long viewCount) {
+        return from(review, mainImageKey, subImageKeys, viewCount, false);
+    }
+
+    public static ReviewResponse from(Review review, String mainImageKey, List<String> subImageKeys, long viewCount, boolean isLike) {
         return new ReviewResponse(
                 review.getId(),
                 review.getTitle(),
@@ -46,7 +51,8 @@ public record ReviewResponse(
                 mainImageKey,
                 subImageKeys,
                 MemberSummaryResponse.from(review.getAuthor()),
-                viewCount
+                viewCount,
+                isLike
         );
     }
 }
