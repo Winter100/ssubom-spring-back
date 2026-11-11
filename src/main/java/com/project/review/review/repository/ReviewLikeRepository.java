@@ -10,6 +10,8 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Set;
 
+
+
 @Repository
 public interface ReviewLikeRepository extends JpaRepository<ReviewLike, Long> {
     boolean existsByReviewIdAndMemberId(Long reviewId, Long memberId);
@@ -42,4 +44,21 @@ public interface ReviewLikeRepository extends JpaRepository<ReviewLike, Long> {
             """)
     void deleteLike(@Param("memberId") Long memberId,
                    @Param("reviewId") Long reviewId);
+
+    Long countByReviewId(Long reviewId);
+
+    interface ReviewLikeCount {
+        Long getReviewId();
+        Long getLikeCount();
+    }
+
+    @Query(value = """
+            select rl.review.id reviewId, count(rl) likeCount
+            from  ReviewLike rl
+            where rl.review.id in :reviewIds
+            group by rl.review.id
+            """)
+    List<ReviewLikeCount> findLikeCounts(
+            @Param("reviewIds") List<Long> reviewIds
+    );
 }

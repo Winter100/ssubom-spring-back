@@ -2,6 +2,7 @@ package com.project.review.review.repository;
 
 import com.project.review.review.entities.Review;
 import com.project.review.review.dtos.ReviewSummaryResponse;
+import com.project.review.review.dtos.ReviewCategoryCountResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -32,7 +33,7 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     @Query(value = """
             select new com.project.review.review.dtos.ReviewSummaryResponse(
                 r.id, r.title, r.createdAt, r.rating,
-                a.id, a.nickname, c.id, c.category, i.imageKey
+                a.id, a.nickname, a.profileImage, c.id, c.category, i.imageKey, false
             )
             from Review r
             join r.author a
@@ -48,4 +49,35 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     @Override
     @EntityGraph(attributePaths = {"author", "category", "images"})
     Optional<Review> findById(Long id);
+    @Query(value = """
+            select new com.project.review.review.dtos.ReviewSummaryResponse(
+                r.id, r.title, r.createdAt, r.rating,
+                a.id, a.nickname,a.profileImage, c.id, c.category, i.imageKey, false
+            )
+            from Review r
+            join r.author a
+            join r.category c
+            left join r.images i on i.displayOrder = 0
+            where a.id = :memberId
+              and (:categoryId is null or c.id = :categoryId)
+            """, countQuery = """
+            select count(r) from Review r
+            where r.author.id = :memberId
+              and (:categoryId is null or r.category.id = :categoryId)
+            """)
+    Page<ReviewSummaryResponse> findAllSummariesByAuthorId(
+            @Param("memberId") Long memberId,
+            @Param("categoryId") Long categoryId,
+            Pageable pageable);
+
+    @Query(value = """
+            select c.id, c.category, count(r)
+            from Category c
+            left join c.reviews r on r.author.id = :memberId
+            group by c.id, c.category
+            order by c.id
+            """)
+    List<ReviewCategoryCountResponse> findCategoryCountsByAuthorId(
+            @Param("memberId") Long memberId
+    );
 }

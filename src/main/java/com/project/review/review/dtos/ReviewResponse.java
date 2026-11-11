@@ -3,6 +3,7 @@ package com.project.review.review.dtos;
 import com.project.review.category.dtos.CategoryResponse;
 import com.project.review.member.dtos.MemberSummaryResponse;
 import com.project.review.review.entities.Review;
+import com.project.review.review.entities.ReviewImage;
 import io.swagger.v3.oas.annotations.media.Schema;
 import tools.jackson.databind.JsonNode;
 
@@ -27,15 +28,17 @@ public record ReviewResponse(
         List<String> subImageKeys,
         MemberSummaryResponse author,
         long viewCount,
-        boolean isLike
+        boolean isLike,
+        Long likeCount
 ) {
 
-    // 공개 URL 생성은 서비스가 담당하고, DTO는 응답 필드 변환만 수행합니다.
-    public static ReviewResponse from(Review review, String mainImageKey, List<String> subImageKeys, long viewCount) {
-        return from(review, mainImageKey, subImageKeys, viewCount, false);
-    }
+    public static ReviewResponse from(Review review, ReviewStats stats) {
+        String mainImageKey = review.getImages().stream()
+                .filter(image -> image.getDisplayOrder() == 0)
+                .findFirst()
+                .map(ReviewImage::getImageKey)
+                .orElse(null);
 
-    public static ReviewResponse from(Review review, String mainImageKey, List<String> subImageKeys, long viewCount, boolean isLike) {
         return new ReviewResponse(
                 review.getId(),
                 review.getTitle(),
@@ -49,10 +52,12 @@ public record ReviewResponse(
                 review.getCons(),
                 review.getVerdict(),
                 mainImageKey,
-                subImageKeys,
+                review.getImages().stream().filter(image -> image.getDisplayOrder() > 0)
+                        .map(ReviewImage::getImageKey).toList(),
                 MemberSummaryResponse.from(review.getAuthor()),
-                viewCount,
-                isLike
+                stats.viewCount(),
+                stats.isLike(),
+                stats.countLike()
         );
     }
 }

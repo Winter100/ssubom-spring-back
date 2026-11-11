@@ -15,7 +15,8 @@ public record ReviewSummaryResponse(
         CategoryResponse category,
         String mainImageKey,
         long viewCount,
-        boolean isLike
+        boolean isLike,
+        long likeCount
 ) {
 
     // JPQL에서 선택한 필드만 받아 기존 작성자·카테고리 응답 구조를 유지합니다.
@@ -26,28 +27,31 @@ public record ReviewSummaryResponse(
             BigDecimal rating,
             Long authorId,
             String nickname,
+            String profileImage,
             Long categoryId,
             String categoryName,
-            String mainImageKey
+            String mainImageKey,
+            boolean isLike
     ) {
         this(
                 id,
                 title,
                 createdAt,
                 rating,
-                new MemberSummaryResponse(authorId, nickname),
+                new MemberSummaryResponse(authorId, nickname, profileImage),
                 new CategoryResponse(categoryId, categoryName),
                 mainImageKey,
                 0L,
-                false
+                isLike,
+                0L
         );
     }
 
-    public ReviewSummaryResponse withViewCountAndLiked(long count, boolean isLike) {
-        return new ReviewSummaryResponse(id, title, createdAt, rating, author, category, mainImageKey, count, isLike);
-    }
-
-    public ReviewSummaryResponse withViewCount(long count) {
-        return new ReviewSummaryResponse(id, title, createdAt, rating, author, category, mainImageKey, count, isLike);
+    public ReviewSummaryResponse withStats(ReviewStats stats) {
+        return new ReviewSummaryResponse(
+                id, title, createdAt, rating,
+                author, category, mainImageKey,
+                stats.viewCount(), stats.isLike(), stats.countLike()
+        );
     }
 }

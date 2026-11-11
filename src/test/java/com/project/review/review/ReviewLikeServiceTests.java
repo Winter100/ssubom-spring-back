@@ -7,6 +7,7 @@ import com.project.review.review.service.ReviewLikeService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,6 +17,28 @@ class ReviewLikeServiceTests {
 
     private final ReviewLikeRepository repository = mock(ReviewLikeRepository.class);
     private final ReviewLikeService service = new ReviewLikeService(repository);
+
+    @Test
+    void emptyPageSkipsLikeCountQuery() {
+        assertEquals(Map.of(), service.findLikeCounts(List.of()));
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void mapsBatchedLikeCountsAndLeavesZeroCountReviewsAbsent() {
+        List<Long> reviewIds = List.of(30L, 29L);
+        ReviewLikeRepository.ReviewLikeCount count = mock(ReviewLikeRepository.ReviewLikeCount.class);
+        when(count.getReviewId()).thenReturn(30L);
+        when(count.getLikeCount()).thenReturn(2L);
+        when(repository.findLikeCounts(reviewIds)).thenReturn(List.of(count));
+
+        Map<Long, Long> counts = service.findLikeCounts(reviewIds);
+
+        assertEquals(Map.of(30L, 2L), counts);
+        assertEquals(0L, counts.getOrDefault(29L, 0L));
+        verify(repository).findLikeCounts(reviewIds);
+        verifyNoMoreInteractions(repository);
+    }
 
     @Test
     void anonymousAndEmptyPageSkipLikeQueries() {

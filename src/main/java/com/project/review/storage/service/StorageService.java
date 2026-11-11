@@ -38,7 +38,6 @@ public class StorageService {
 
     private final ImageUploadRepository imageUploadRepository;
     private final TransactionTemplate transactionTemplate;
-    private final MemberService memberService;
     private final S3Presigner resigned; // URL 서명 객체
     private final S3Client s3Client;
 
@@ -49,11 +48,10 @@ public class StorageService {
     private String publicBaseUrl; // R2 공개 개발 URL 또는 버킷에 연결된 사용자 도메인
 
     @Transactional
-    public List<ImageUploadResponse> uploadUrls(ImageUploadBatchRequest batchRequest, Long memberId) {
+    public List<ImageUploadResponse> uploadUrls(ImageUploadBatchRequest batchRequest, Member member) {
 
         List<ImageUploadResponse> responseList = new ArrayList<>();
         List<ImageUploadStatus> imageUploadStatusList = new ArrayList<>();
-        Member member = memberService.findById(memberId);
         Instant now = Instant.now();
         Instant attachExpiresAt = now.plus(Duration.ofHours(1));
 

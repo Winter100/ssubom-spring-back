@@ -8,12 +8,13 @@ import com.project.review.member.entities.Member;
 import com.project.review.member.service.MemberService;
 import com.project.review.auth.service.TokenService;
 import com.project.review.review.dtos.ReviewPageResponse;
+import com.project.review.review.dtos.ReviewStats;
+import com.project.review.review.dtos.ReviewCategoryCountResponse;
 import com.project.review.review.dtos.ReviewRequest;
 import com.project.review.review.dtos.ReviewResponse;
 import com.project.review.review.dtos.ReviewSummaryResponse;
 import com.project.review.review.dtos.ReviewUpdateRequest;
 import com.project.review.review.entities.Review;
-import com.project.review.review.entities.ReviewImage;
 import com.project.review.review.entities.ReviewImageDelete;
 import com.project.review.review.repository.ReviewImageDeleteRepository;
 import com.project.review.review.repository.ReviewRepository;
@@ -22,6 +23,7 @@ import com.project.review.storage.service.StorageService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NonNull;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -84,11 +86,57 @@ public class ReviewService {
                 Sort.by(Sort.Direction.DESC, "createdAt", "id")
         );
         Page<ReviewSummaryResponse> reviews = reviewRepository.findAllSummaries(pageable);
-        List<Long> reviewIds = reviews.getContent().stream().map(ReviewSummaryResponse::id).toList();
+        return getReviewPageResponse(memberId, reviews);
+    }
+
+    /**
+     * 내 게시글 조회
+     */
+    @Transactional(readOnly = true)
+    public ReviewPageResponse findReviewByMemberId(
+            Long memberId, String page, String size, String categoryId) {
+        int pageNumber;
+        int pageSize;
+        Long category;
+        try {
+            pageNumber = Integer.parseInt(page);
+            pageSize = Integer.parseInt(size);
+            category = categoryId == null ? null : Long.valueOf(categoryId);
+            if (pageNumber < 1 || pageSize < 1 || pageSize > 100 || (category != null && category < 1)) {
+                throw new IllegalArgumentException("유효하지 않은 조회 조건입니다.");
+            }
+        } catch (IllegalArgumentException exception) {
+            pageNumber = 1;
+            pageSize = 50;
+            category = null;
+        }
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt", "id");
+        Page<ReviewSummaryResponse> reviews = reviewRepository.findAllSummariesByAuthorId(
+                memberId, category, PageRequest.of(pageNumber - 1, pageSize, sort));
+        return getReviewPageResponse(memberId, reviews);
+    }
+
+    @NonNull
+    private ReviewPageResponse getReviewPageResponse(Long memberId, Page<ReviewSummaryResponse> reviews) {
+        List<Long> reviewIds = reviews.getContent().stream()
+                .map(ReviewSummaryResponse::id)
+                .toList();
         Map<Long, Long> counts = reviewViewRepository.findCounts(reviewIds);
+        Map<Long, Long> likeCounts = reviewLikeService.findLikeCounts(reviewIds);
         Set<Long> likedReviewIds = reviewLikeService.findLikedReviewIds(memberId, reviewIds);
-        return ReviewPageResponse.from(reviews.map(review ->
-                review.withViewCountAndLiked(counts.getOrDefault(review.id(), 0L), likedReviewIds.contains(review.id()))));
+        return ReviewPageResponse.from(reviews.map(
+                review -> review.withStats(new ReviewStats(
+                        counts.getOrDefault(review.id(), 0L),
+                        likedReviewIds.contains(review.id()),
+                        likeCounts.getOrDefault(review.id(), 0L)))));
+    }
+
+    /**
+     * 카테고리별 Member가 작성한 리뷰 수
+     */
+    @Transactional(readOnly = true)
+    public List<ReviewCategoryCountResponse> findByMyReviewCount(Long memberId) {
+        return reviewRepository.findCategoryCountsByAuthorId(memberId);
     }
 
     /**
@@ -353,22 +401,7 @@ public class ReviewService {
     }
 
     private ReviewResponse toResponse(Review review, Long count, boolean isLike) {
-        List<ReviewImage> images = review.getImages();
-
-        String mainImageKey = images.stream()
-                .filter(image -> image.getDisplayOrder() == 0)
-                .findFirst()
-                .map(ReviewImage::getImageKey)
-                .orElse(null);
-
-        List<String> subImageKeys = images.stream()
-                .filter(image -> image.getDisplayOrder() > 0)
-                .map(ReviewImage::getImageKey)
-                .toList();
-
-        // count가 null이면 조회, 아니면 전달받은 값 사용
         long viewCount = (count != null && count >= 0) ? count : reviewViewRepository.findCount(review.getId());
-
-        return ReviewResponse.from(review, mainImageKey, subImageKeys, viewCount, isLike);
+        return ReviewResponse.from(review, new ReviewStats(viewCount, isLike, reviewLikeService.countLike(review.getId())));
     }
 }

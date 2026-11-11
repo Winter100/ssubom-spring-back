@@ -1,6 +1,8 @@
 package com.project.review.storage.controller;
 
 import com.project.review.auth.service.TokenService;
+import com.project.review.member.entities.Member;
+import com.project.review.member.service.MemberService;
 import com.project.review.storage.dtos.ImageUploadBatchRequest;
 import com.project.review.storage.dtos.ImageUploadResponse;
 import com.project.review.storage.service.StorageService;
@@ -23,6 +25,7 @@ public class StorageController {
 
     private final StorageService storageService;
     private final TokenService tokenService;
+    private final MemberService memberService;
 
     /**
      * presigner-url 발급 요청
@@ -32,10 +35,10 @@ public class StorageController {
             @Valid @RequestBody ImageUploadBatchRequest request,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        // 서비스 호출 후 발급 결과를 HTTP 200으로 반환
         Long memberId = tokenService.extractMemberId(jwt);
+        Member member = memberService.findById(memberId);
         return ResponseEntity.ok(
-                storageService.uploadUrls(request, memberId)
+                storageService.uploadUrls(request, member)
         );
     }
 }

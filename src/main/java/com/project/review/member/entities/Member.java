@@ -4,22 +4,14 @@ import com.project.review.auth.entities.RefreshToken;
 import com.project.review.auth.entities.Role;
 import com.project.review.review.entities.Review;
 import com.project.review.storage.entities.ImageUploadStatus;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -52,8 +44,13 @@ public class Member {
     @Column(nullable = false)
     private String nickname;
 
+    private Instant nicknameChangedAt;
+
     @Column(nullable = false)
     private String password;
+
+    @Column()
+    private String profileImage;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -81,5 +78,18 @@ public class Member {
         this.email = email;
         this.nickname = nickname;
         this.password = password;
+    }
+
+    public void changeName(String nickname, Instant changedAt) {
+        if (StringUtils.hasText(nickname)) {
+            this.nickname = nickname;
+            this.nicknameChangedAt = changedAt;
+        }
+    }
+
+    public void changeProfileImage(String profileImage) {
+        if (StringUtils.hasText(profileImage)) {
+            this.profileImage = profileImage;
+        }
     }
 }
