@@ -3,6 +3,8 @@ package com.project.review.review.repository;
 import com.project.review.review.entities.Review;
 import com.project.review.review.dtos.ReviewSummaryResponse;
 import com.project.review.review.dtos.ReviewCategoryCountResponse;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -16,6 +18,10 @@ import java.util.Set;
 import tools.jackson.databind.JsonNode;
 
 public interface ReviewRepository extends JpaRepository<Review, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Review r where r.id = :id")
+    Optional<Review> findByIdForUpdate(@Param("id") Long id);
 
     interface ContentReference {
         Long getId();

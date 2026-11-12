@@ -8,6 +8,9 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor // final 필드 생성자 생성
 public enum ErrorCode {
 
+    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "댓글을 찾을 수 없습니다."),
+    COMMENT_DELETED(HttpStatus.CONFLICT, "삭제된 댓글은 변경할 수 없습니다."),
+
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다."), // 리뷰 조회 실패
     REVIEW_UPDATE_CONFLICT(HttpStatus.CONFLICT, "리뷰가 변경되거나 삭제되었습니다. 새로 조회한 후 다시 시도해 주세요."),
     CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "카테고리를 찾을 수 없습니다."), // 카테고리 조회 실패

@@ -2,6 +2,7 @@ package com.project.review.review.service;
 
 import com.project.review.category.entities.Category;
 import com.project.review.category.service.CategoryService;
+import com.project.review.comment.repository.CommentRepository;
 import com.project.review.common.exception.BusinessException;
 import com.project.review.common.exception.ErrorCode;
 import com.project.review.member.entities.Member;
@@ -55,6 +56,7 @@ public class ReviewService {
     private final StorageService storageService;
     private final TokenService tokenService;
     private final ReviewRepository reviewRepository;
+    private final CommentRepository commentRepository;
     private final ReviewImageDeleteRepository reviewImageDeleteRepository;
     private final ReviewViewRepository reviewViewRepository;
     private final Clock reviewViewClock;
@@ -253,7 +255,8 @@ public class ReviewService {
     public void remove(Long reviewId, Jwt jwt) {
         Long memberId = tokenService.extractMemberId(jwt);
 
-        Review review = findReviewById(reviewId);
+        Review review = reviewRepository.findByIdForUpdate(reviewId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
 
         validateReviewAuthor(review, memberId);
 
@@ -266,6 +269,8 @@ public class ReviewService {
         reviewImageDeleteRepository.saveAll(deleteImages);
 
         // 리뷰 삭제
+        commentRepository.deleteRepliesByReviewId(reviewId);
+        commentRepository.deleteAllByReviewId(reviewId);
         reviewRepository.delete(review);
     }
 
