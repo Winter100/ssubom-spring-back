@@ -6,15 +6,9 @@ import com.project.review.comment.repository.CommentRepository;
 import com.project.review.common.exception.BusinessException;
 import com.project.review.common.exception.ErrorCode;
 import com.project.review.member.entities.Member;
+import com.project.review.member.repository.MemberRepository;
 import com.project.review.member.service.MemberService;
-import com.project.review.auth.service.TokenService;
-import com.project.review.review.dtos.ReviewPageResponse;
-import com.project.review.review.dtos.ReviewStats;
-import com.project.review.review.dtos.ReviewCategoryCountResponse;
-import com.project.review.review.dtos.ReviewRequest;
-import com.project.review.review.dtos.ReviewResponse;
-import com.project.review.review.dtos.ReviewSummaryResponse;
-import com.project.review.review.dtos.ReviewUpdateRequest;
+import com.project.review.review.dtos.*;
 import com.project.review.review.entities.Review;
 import com.project.review.review.entities.ReviewImageDelete;
 import com.project.review.review.repository.ReviewImageDeleteRepository;
@@ -28,22 +22,13 @@ import org.jspecify.annotations.NonNull;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-
 import tools.jackson.databind.JsonNode;
 
 import java.time.Clock;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -52,14 +37,13 @@ public class ReviewService {
     private final TransactionTemplate transactionTemplate;
     private final EntityManager entityManager;
     private final MemberService memberService;
+    private final MemberRepository memberRepository;
     private final CategoryService categoryService;
     private final StorageService storageService;
-    private final TokenService tokenService;
     private final ReviewRepository reviewRepository;
     private final CommentRepository commentRepository;
     private final ReviewImageDeleteRepository reviewImageDeleteRepository;
     private final ReviewViewRepository reviewViewRepository;
-    private final Clock reviewViewClock;
     private final ReviewImageKeys reviewImageKeys;
     private final Clock imageDeletionClock;
     private final ReviewLikeService reviewLikeService;
@@ -68,13 +52,7 @@ public class ReviewService {
      * 1부터 시작하는 요청 페이지를 JPA의 0 기반 페이지로 변환합니다.
      */
     @Transactional(readOnly = true)
-    public ReviewPageResponse findAll(int page, int size) {
-        return findAll(page, size, null);
-    }
-
-    @Transactional(readOnly = true)
-    public ReviewPageResponse findAll(int page, int size, Jwt jwt) {
-        Long memberId = jwt == null ? null : tokenService.extractMemberId(jwt);
+    public ReviewPageResponse findAll(int page, int size, String searchType, Long categoryId, String query, Long memberId) {
         if (page < 1) {
             throw new IllegalArgumentException("페이지는 1 이상이어야 합니다.");
         }
@@ -82,12 +60,22 @@ public class ReviewService {
             throw new IllegalArgumentException("페이지 크기는 1 이상 100 이하여야 합니다.");
         }
 
+        if (!"title".equals(searchType) && !"author".equals(searchType)) {
+            throw new IllegalArgumentException("검색 유형은 title 또는 author여야 합니다.");
+        }
+        String searchQuery = query == null || query.isBlank() ? null : query;
+        String titleQuery = "title".equals(searchType) && searchQuery != null ? searchQuery : "";
+        String authorQuery = "author".equals(searchType) && searchQuery != null ? searchQuery : "";
+
         PageRequest pageable = PageRequest.of(
                 page - 1,
                 size,
                 Sort.by(Sort.Direction.DESC, "createdAt", "id")
         );
-        Page<ReviewSummaryResponse> reviews = reviewRepository.findAllSummaries(pageable);
+        boolean hasSearchConditions = categoryId != null || searchQuery != null;
+        Page<ReviewSummaryResponse> reviews = hasSearchConditions
+                ? reviewRepository.findAllSummaries(categoryId, titleQuery, authorQuery, pageable)
+                : reviewRepository.findAllSummaries(pageable);
         return getReviewPageResponse(memberId, reviews);
     }
 
@@ -144,39 +132,35 @@ public class ReviewService {
     /**
      * 상세 리뷰 조회
      */
-    @Transactional(readOnly = true)
-    public ReviewResponse findById(Long reviewId) {
-        return toResponse(findReviewById(reviewId));
-    }
-
-    /** 방문 기록과 누적 증가를 같은 트랜잭션으로 처리합니다. */
     @Transactional
-    public ReviewResponse findByIdAndCountView(Long reviewId, UUID visitorId) {
-        return findByIdAndCountView(reviewId, visitorId, null);
-    }
-
-    @Transactional
-    public ReviewResponse findByIdAndCountView(Long reviewId, UUID visitorId, Jwt jwt) {
+    public ReviewResponse findByIdAndCountView(Long reviewId, Long memberId) {
         Review review = findReviewById(reviewId);
-        LocalDate date = LocalDate.now(reviewViewClock.withZone(ZoneId.of("Asia/Seoul")));
-        if (reviewViewRepository.insertDailyView(reviewId, visitorId, date)) {
-            reviewViewRepository.increment(reviewId);
-        }
-        Long memberId = jwt == null ? null : tokenService.extractMemberId(jwt);
-        return toResponse(review, null, reviewLikeService.isLike(reviewId, memberId));
+
+        // 조회수 증가
+        reviewViewRepository.increment(reviewId);
+
+        // 조회수
+        long viewCount = reviewViewRepository.findCount(reviewId);
+
+        // 좋아요 여부
+        boolean isLike = reviewLikeService.isLike(reviewId, memberId);
+
+        // 리뷰의 좋아요 수
+        long countLike = reviewLikeService.countLike(reviewId);
+
+        return ReviewResponse.from(review, new ReviewStats(viewCount, isLike, countLike));
     }
 
     /**
      * 수정용 리뷰 조회
      */
-    @Transactional
-    public ReviewResponse findByIdEditView(Long reviewId, Jwt jwt) {
-        Long memberId = tokenService.extractMemberId(jwt);
+    @Transactional(readOnly = true)
+    public ReviewEditResponse findByIdEditView(Long reviewId, Long memberId) {
 
         Review review = findReviewById(reviewId);
-        validateReviewAuthor(review, memberId);
+        review.validateAuthor(memberId);
 
-        return toResponse(review, 0L);
+        return ReviewEditResponse.from(review);
     }
 
     /**
@@ -184,8 +168,7 @@ public class ReviewService {
      * 업로드된 이미지의 첨부 가능 여부 및 R2 메타데이터를 검증한 뒤 리뷰 생성
      * 업로드 상태변경 및 리뷰 저장만 하나의 트랜잭션으로 처리
      */
-    public ReviewResponse create(ReviewRequest reviewRequest, Jwt jwt) {
-        Long memberId = tokenService.extractMemberId(jwt);
+    public void create(ReviewRequest reviewRequest, Long memberId) {
         Member member = memberService.findById(memberId);
         Category category = categoryService.findById(reviewRequest.categoryId());
 
@@ -196,7 +179,7 @@ public class ReviewService {
         // 요청 이미지 키와 실제 R2 메타데이터 검증
         storageService.validateImagesForReview(imageKeys, member.getId());
 
-        return transactionTemplate.execute(status ->
+        transactionTemplate.executeWithoutResult(status ->
                 saveReview(reviewRequest, member, category, imageKeys));
     }
 
@@ -205,12 +188,10 @@ public class ReviewService {
      * - PUT 방식 기존 리뷰 -> 새로운 리뷰로 교체
      * - 이미지만 변경되어도 리뷰의 버전 증가
      */
-    public void update(Long reviewId, ReviewUpdateRequest reviewUpdateRequest, Jwt jwt) {
-        Long memberId = tokenService.extractMemberId(jwt);
-        Member member = memberService.findById(memberId);
+    public void update(Long reviewId, ReviewUpdateRequest reviewUpdateRequest, Long memberId) {
         Review review = findReviewById(reviewId);
+        review.validateAuthor(memberId);
 
-        validateReviewAuthor(review, memberId);
         Long expectedVersion = review.getVersion();
 
         // 수정 요청에서 이미지 리스트 가져오기
@@ -240,7 +221,7 @@ public class ReviewService {
             // 이미지 관계만 변경해도 버전을 증가시켜 다른 수정·삭제와의 충돌을 감지합니다.
             entityManager.lock(currentReview, LockModeType.OPTIMISTIC_FORCE_INCREMENT);
 
-            storageService.attachIfPending(createImageKeys, member.getId());
+            storageService.attachIfPending(createImageKeys, memberId);
             reviewImageDeleteRepository.saveAll(deleteImages);
             updateReview(currentReview, reviewUpdateRequest);
         });
@@ -252,20 +233,19 @@ public class ReviewService {
      * - 삭제될 리뷰의 이미지 키를 이미지 삭제 예정 테이블에 등록 후 리뷰 삭제
      */
     @Transactional
-    public void remove(Long reviewId, Jwt jwt) {
-        Long memberId = tokenService.extractMemberId(jwt);
-
+    public void remove(Long reviewId, Long memberId) {
+        // 댓글 변경과 같은 리뷰 행을 먼저 잠가 삭제 중 새 댓글이 추가되지 않도록 합니다.
         Review review = reviewRepository.findByIdForUpdate(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
 
-        validateReviewAuthor(review, memberId);
+        review.validateAuthor(memberId);
 
         // 리뷰에서 이미지 키를 받고 삭제 테이블에 맞게 생성
         List<ReviewImageDelete> deleteImages = reviewImageKeys.collect(review).stream()
                 .map(this::newImageDeletion)
                 .toList();
 
-        // 이미지 삭제 예정 테이블에 등록
+        // Todo 이벤트로 이미지 삭제 테이블 등록 변경하기
         reviewImageDeleteRepository.saveAll(deleteImages);
 
         // 리뷰 삭제
@@ -276,40 +256,25 @@ public class ReviewService {
 
     // 리뷰 "도움이 됐어요" 추가
     @Transactional
-    public void insertLike(Long reviewId, Jwt jwt) {
-        Long memberId = tokenService.extractMemberId(jwt);
-        Member member = memberService.findById(memberId);
+    public void insertLike(Long reviewId, Long memberId) {
         Review review = findReviewById(reviewId);
-        reviewLikeService.insertLike(review, member);
+        reviewLikeService.insertLike(review.getId(), memberId);
     }
 
     // 리뷰 "도움이 됐어요" 제거
     @Transactional
-    public void deleteLike(Long reviewId, Jwt jwt) {
-        Long memberId = tokenService.extractMemberId(jwt);
-        Member member = memberService.findById(memberId);
+    public void deleteLike(Long reviewId, Long memberId) {
         Review review = findReviewById(reviewId);
-        reviewLikeService.deleteLike(review, member);
+        reviewLikeService.deleteLike(review.getId(), memberId);
     }
 
     // 리뷰 저장
-    private ReviewResponse saveReview(ReviewRequest reviewRequest, Member member, Category category, List<String> imageKeys) {
+    private void saveReview(ReviewRequest reviewRequest, Member member, Category category, List<String> imageKeys) {
 
         // 이미지 저장 요청시 Pending으로 저장되었던 요청을 attach로 변경
         storageService.attachIfPending(imageKeys, member.getId());
 
-        Review review = Review.builder()
-                .title(reviewRequest.title())
-                .content(reviewRequest.content())
-                .rating(reviewRequest.rating())
-                .cons(reviewRequest.cons())
-                .pros(reviewRequest.pros())
-                .product(reviewRequest.product())
-                .duration(reviewRequest.duration())
-                .verdict(reviewRequest.verdict())
-                .author(member)
-                .category(category)
-                .build();
+        Review review = Review.create(reviewRequest, member, category);
 
         String mainImageKey = reviewRequest.mainImageKey();
         List<String> subImageKeys = reviewRequest.subImageKeys();
@@ -324,7 +289,7 @@ public class ReviewService {
             }
         }
 
-        return toResponse(reviewRepository.save(review));
+        reviewRepository.save(review);
     }
 
     private void updateReview(Review review, ReviewUpdateRequest reviewUpdateRequest) {
@@ -357,6 +322,7 @@ public class ReviewService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
     }
 
+
     // 이미지 리스트 키 추출 및 반환
     private List<String> collectImageKeys(String mainImageKey, List<String> subImageKeys, JsonNode content) {
         List<String> imageKeys = new ArrayList<>();
@@ -378,13 +344,7 @@ public class ReviewService {
         return new ReviewImageDelete(key, ImageDeletionTime.nextMidnight(imageDeletionClock.instant()));
     }
 
-    private void validateReviewAuthor(Review review, Long memberId) {
-        if (!review.getAuthor().getId().equals(memberId)) {
-            throw new BusinessException(ErrorCode.ACCESS_DENIED);
-        }
-    }
-
-    private  void addReviewImages(Review review, String mainImage, List<String> subImages){
+    private void addReviewImages(Review review, String mainImage, List<String> subImages) {
         if (mainImage != null) {
             review.addImage(mainImage, 0);
         }
@@ -394,19 +354,5 @@ public class ReviewService {
                 review.addImage(subImages.get(index), index + 1);
             }
         }
-    }
-
-    private ReviewResponse toResponse(Review review) {
-        // count 자리에 null을 넘기면 위 메서드에서 직접 조회함
-        return toResponse(review, null);
-    }
-
-    private ReviewResponse toResponse(Review review, Long count) {
-        return toResponse(review, count, false);
-    }
-
-    private ReviewResponse toResponse(Review review, Long count, boolean isLike) {
-        long viewCount = (count != null && count >= 0) ? count : reviewViewRepository.findCount(review.getId());
-        return ReviewResponse.from(review, new ReviewStats(viewCount, isLike, reviewLikeService.countLike(review.getId())));
     }
 }

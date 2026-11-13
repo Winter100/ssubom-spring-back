@@ -28,7 +28,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -82,7 +81,6 @@ class ReviewUpdateConcurrencyTests {
     private Member member;
     private Long categoryId;
     private Long reviewId;
-    private Jwt jwt;
 
     @BeforeEach
     void setUp() {
@@ -91,11 +89,11 @@ class ReviewUpdateConcurrencyTests {
         uploads.deleteAll();
         members.deleteAll();
         categories.deleteAll();
-        member = members.save(Member.builder().email("update@example.com").nickname("update-user").password("unused").build());
+        member = members.save(Member.create("update@example.com", "update-user", "unused"));
         categoryId = categories.save(new Category("update-check")).getId();
-        jwt = Jwt.withTokenValue("test").header("alg", "HS256").subject(member.getId().toString()).build();
-        Review review = Review.builder().title("original").product("Product").content(textDocument("original")).rating(BigDecimal.ONE)
-                .author(member).category(categories.findById(categoryId).orElseThrow()).build();
+        Review review = Review.create(new ReviewRequest("original", "Product", textDocument("original"), BigDecimal.ONE,
+                null, null, null, null, null, null, null),
+                member, categories.findById(categoryId).orElseThrow());
         review.addImage("reviews/A", 0);
         review.addImage("reviews/B", 1);
         reviewId = reviews.saveAndFlush(review).getId();
@@ -107,7 +105,7 @@ class ReviewUpdateConcurrencyTests {
     void replacementKeepsRetainedKeyAttachesNewKeyAndQueuesOnlyRemovedKey() {
         addUpload("reviews/C", UploadStatus.PENDING);
         mockHead(() -> {});
-        service.update(reviewId, request("reviews/B", List.of("reviews/C")), jwt);
+        service.update(reviewId, request("reviews/B", List.of("reviews/C")), member.getId());
         Review result = reviews.findById(reviewId).orElseThrow();
         assertThat(result.getTitle()).isEqualTo("updated");
         assertThat(keys()).containsExactly("reviews/B", "reviews/C");
@@ -118,7 +116,7 @@ class ReviewUpdateConcurrencyTests {
 
     @Test
     void swapsMainAndSubWithoutQueueOrR2() {
-        service.update(reviewId, request("reviews/B", List.of("reviews/A")), jwt);
+        service.update(reviewId, request("reviews/B", List.of("reviews/A")), member.getId());
         assertThat(keys()).containsExactly("reviews/B", "reviews/A");
         assertThat(queue()).isEmpty();
         verifyNoInteractions(s3);
@@ -126,7 +124,7 @@ class ReviewUpdateConcurrencyTests {
 
     @Test
     void retainsImageMovedFromGalleryToNestedBody() {
-        service.update(reviewId, bodyRequest(body("reviews/A"), null), jwt);
+        service.update(reviewId, bodyRequest(body("reviews/A"), null), member.getId());
         assertThat(keys()).isEmpty();
         assertThat(queue()).containsExactly("reviews/B");
         verifyNoInteractions(s3);
@@ -136,18 +134,18 @@ class ReviewUpdateConcurrencyTests {
     void attachesBodyOnlyUploadAndQueuesItWhenRemoved() {
         addUpload("reviews/body-new", UploadStatus.PENDING);
         mockHead(() -> {});
-        service.update(reviewId, bodyRequest(body("reviews/body-new"), "reviews/A"), jwt);
+        service.update(reviewId, bodyRequest(body("reviews/body-new"), "reviews/A"), member.getId());
         assertThat(uploadStatus("reviews/body-new")).isEqualTo(UploadStatus.ATTACHED);
         assertThat(queue()).containsExactly("reviews/B");
 
-        service.update(reviewId, bodyRequest(textDocument("no images"), "reviews/A"), jwt);
+        service.update(reviewId, bodyRequest(textDocument("no images"), "reviews/A"), member.getId());
         assertThat(queue()).containsExactlyInAnyOrder("reviews/B", "reviews/body-new");
     }
 
     @Test
     void rejectsUnissuedBodyImageWithoutQueueOrReviewChanges() {
         assertThatThrownBy(() -> service.update(reviewId,
-                bodyRequest(body("reviews/unissued"), "reviews/A"), jwt))
+                bodyRequest(body("reviews/unissued"), "reviews/A"), member.getId()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(queue()).isEmpty();
         assertThat(keys()).containsExactly("reviews/A", "reviews/B");
@@ -155,8 +153,8 @@ class ReviewUpdateConcurrencyTests {
 
     @Test
     void deletionQueuesGalleryAndBodyKeysOnce() {
-        service.update(reviewId, bodyRequest(body("reviews/A"), "reviews/A"), jwt);
-        service.remove(reviewId, jwt);
+        service.update(reviewId, bodyRequest(body("reviews/A"), "reviews/A"), member.getId());
+        service.remove(reviewId, member.getId());
         assertThat(queue()).containsExactlyInAnyOrder("reviews/A", "reviews/B");
         assertThat(reviews.existsById(reviewId)).isFalse();
     }
@@ -165,8 +163,8 @@ class ReviewUpdateConcurrencyTests {
     void deletionQueuesBodyOnlyImageAfterItWasAttached() {
         addUpload("reviews/body-only", UploadStatus.PENDING);
         mockHead(() -> {});
-        service.update(reviewId, bodyRequest(body("reviews/body-only"), "reviews/A"), jwt);
-        service.remove(reviewId, jwt);
+        service.update(reviewId, bodyRequest(body("reviews/body-only"), "reviews/A"), member.getId());
+        service.remove(reviewId, member.getId());
         assertThat(queue()).containsExactlyInAnyOrder("reviews/A", "reviews/B", "reviews/body-only");
         assertThat(reviews.existsById(reviewId)).isFalse();
     }
@@ -177,7 +175,7 @@ class ReviewUpdateConcurrencyTests {
         mockHead(() -> {});
         doThrow(new IllegalStateException("category failure")).when(categoryService).findById(categoryId);
         assertThatThrownBy(() -> service.update(reviewId,
-                bodyRequest(body("reviews/body-new"), null), jwt)).isInstanceOf(IllegalStateException.class);
+                bodyRequest(body("reviews/body-new"), null), member.getId())).isInstanceOf(IllegalStateException.class);
         assertThat(queue()).isEmpty();
         assertThat(keys()).containsExactly("reviews/A", "reviews/B");
         assertThat(uploadStatus("reviews/body-new")).isEqualTo(UploadStatus.PENDING);
@@ -188,7 +186,7 @@ class ReviewUpdateConcurrencyTests {
         addUpload("reviews/create-body", UploadStatus.PENDING);
         mockHead(() -> {});
         service.create(new ReviewRequest("body review", "Product", body("reviews/create-body"), BigDecimal.ONE,
-                categoryId, null, List.of(), null, null, null, null), jwt);
+                categoryId, null, List.of(), null, null, null, null), member.getId());
         assertThat(uploadStatus("reviews/create-body")).isEqualTo(UploadStatus.ATTACHED);
         assertThat(reviews.count()).isEqualTo(2);
     }
@@ -208,7 +206,7 @@ class ReviewUpdateConcurrencyTests {
 
     @Test
     void removesAllImages() {
-        service.update(reviewId, request(null, List.of()), jwt);
+        service.update(reviewId, request(null, List.of()), member.getId());
         assertThat(keys()).isEmpty();
         assertThat(queue()).containsExactlyInAnyOrder("reviews/A", "reviews/B");
         verifyNoInteractions(s3);
@@ -219,7 +217,7 @@ class ReviewUpdateConcurrencyTests {
         addUpload("reviews/C", UploadStatus.PENDING);
         mockHead(() -> {});
         ReviewUpdateRequest request = new ReviewUpdateRequest("updated", textDocument("updated"), BigDecimal.ONE, "Product", Long.MAX_VALUE, "reviews/B", List.of("reviews/C"), null, null, null, null);
-        assertThatThrownBy(() -> service.update(reviewId, request, jwt)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.update(reviewId, request, member.getId())).isInstanceOf(BusinessException.class);
         assertThat(keys()).containsExactly("reviews/A", "reviews/B");
         assertThat(queue()).isEmpty();
         assertThat(uploadStatus("reviews/C")).isEqualTo(UploadStatus.PENDING);
@@ -231,7 +229,7 @@ class ReviewUpdateConcurrencyTests {
         addUpload(" ", UploadStatus.PENDING);
         mockHead(() -> {});
         ReviewUpdateRequest invalid = new ReviewUpdateRequest("updated", textDocument("updated"), BigDecimal.ONE, "Product", categoryId, "reviews/C", List.of(" "), null, null, null, null);
-        assertThatThrownBy(() -> service.update(reviewId, invalid, jwt)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> service.update(reviewId, invalid, member.getId())).isInstanceOf(RuntimeException.class);
         assertThat(keys()).containsExactly("reviews/A", "reviews/B");
         assertThat(reviews.findById(reviewId).orElseThrow().getTitle()).isEqualTo("original");
         assertThat(queue()).isEmpty();
@@ -245,11 +243,11 @@ class ReviewUpdateConcurrencyTests {
         AtomicBoolean otherRequestRan = new AtomicBoolean();
         mockHead(() -> {
             if (otherRequestRan.compareAndSet(false, true)) {
-                service.update(reviewId, request("reviews/A", List.of("reviews/C")), jwt);
+                service.update(reviewId, request("reviews/A", List.of("reviews/C")), member.getId());
             }
         });
 
-        assertThatThrownBy(() -> service.update(reviewId, request("reviews/B", List.of("reviews/D")), jwt))
+        assertThatThrownBy(() -> service.update(reviewId, request("reviews/B", List.of("reviews/D")), member.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.REVIEW_UPDATE_CONFLICT));
 
@@ -265,7 +263,7 @@ class ReviewUpdateConcurrencyTests {
         Long originalVersion = reviews.findById(reviewId).orElseThrow().getVersion();
         ReviewUpdateRequest request = new ReviewUpdateRequest("original", textDocument("original"), BigDecimal.ONE, "Product", categoryId, "reviews/B", List.of("reviews/A"), null, null, null, null);
 
-        service.update(reviewId, request, jwt);
+        service.update(reviewId, request, member.getId());
 
         assertThat(reviews.findById(reviewId).orElseThrow().getVersion()).isGreaterThan(originalVersion);
         assertThat(keys()).containsExactly("reviews/B", "reviews/A");
@@ -276,9 +274,9 @@ class ReviewUpdateConcurrencyTests {
     @Test
     void rejectsUpdateWhenReviewIsDeletedDuringR2Validation() {
         addUpload("reviews/C", UploadStatus.PENDING);
-        mockHead(() -> service.remove(reviewId, jwt));
+        mockHead(() -> service.remove(reviewId, member.getId()));
 
-        assertThatThrownBy(() -> service.update(reviewId, request("reviews/C", List.of()), jwt))
+        assertThatThrownBy(() -> service.update(reviewId, request("reviews/C", List.of()), member.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.REVIEW_UPDATE_CONFLICT));
 
@@ -317,12 +315,12 @@ class ReviewUpdateConcurrencyTests {
         mockHead(() -> {});
         doAnswer(invocation -> {
             try (var executor = Executors.newSingleThreadExecutor()) {
-                executor.submit(() -> service.remove(reviewId, jwt)).get(10, TimeUnit.SECONDS);
+                executor.submit(() -> service.remove(reviewId, member.getId())).get(10, TimeUnit.SECONDS);
             }
             return invocation.callRealMethod();
         }).when(categoryService).findById(categoryId);
 
-        assertThatThrownBy(() -> service.update(reviewId, request("reviews/B", List.of("reviews/C")), jwt))
+        assertThatThrownBy(() -> service.update(reviewId, request("reviews/B", List.of("reviews/C")), member.getId()))
                 .isInstanceOfAny(OptimisticLockingFailureException.class, OptimisticLockException.class);
 
         assertThat(reviews.existsById(reviewId)).isFalse();
@@ -354,7 +352,7 @@ class ReviewUpdateConcurrencyTests {
 
     private boolean attemptUpdate(String newKey) {
         try {
-            service.update(reviewId, request("reviews/B", List.of(newKey)), jwt);
+            service.update(reviewId, request("reviews/B", List.of(newKey)), member.getId());
             return true;
         } catch (OptimisticLockingFailureException | OptimisticLockException ex) {
             return false;

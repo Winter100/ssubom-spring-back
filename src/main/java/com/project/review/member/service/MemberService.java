@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -31,7 +32,7 @@ public class MemberService {
     private final PasswordEncoder passwordEncoder;
     private final StorageService storageService;
     private final ReviewImageDeleteRepository reviewImageDeleteRepository;
-    private final Clock imageDeletionClock;
+    private final Clock clock;
 
     @Transactional
     public MemberResponse create(SignupRequest request) {
@@ -39,11 +40,11 @@ public class MemberService {
         existsEmail(request.email());
         existsNickname(request.nickname());
 
-        Member member = Member.builder()
-                .email(request.email())
-                .password(passwordEncoder.encode(request.password()))
-                .nickname(request.nickname())
-                .build();
+        Member member = Member.create(
+                request.email(),
+                request.nickname(),
+                passwordEncoder.encode(request.password())
+        );
 
         return MemberResponse.from(memberRepository.save(member));
     }
@@ -54,32 +55,26 @@ public class MemberService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
 
         String updateNickname = memberUpdateRequest.nickName();
-        String profileImage = memberUpdateRequest.profileImage();
+        String updateProfileImage = memberUpdateRequest.profileImage();
 
-        // 닉네임 변경
-        if (updateNickname != null
-                && !updateNickname.isBlank()
-                && !member.getNickname().equals(updateNickname)) {
-            Instant now = imageDeletionClock.instant();
-            Instant nicknameChangedAt = member.getNicknameChangedAt();
-            if (nicknameChangedAt != null && now.isBefore(nicknameChangedAt.plus(Duration.ofDays(7)))) {
-                throw new BusinessException(ErrorCode.NICKNAME_CHANGE_NOT_ALLOWED);
-            }
+        // 닉네임 변경 (7일)
+        if (StringUtils.hasText(updateNickname) && !member.getNickname().equals(updateNickname)) {
             existsNickname(updateNickname);
+            Instant now = clock.instant();
             member.changeName(updateNickname, now);
         }
 
-        if (profileImage != null
-                && !profileImage.isBlank()
-                && !Objects.equals(member.getProfileImage(), profileImage)
+        if (updateProfileImage != null
+                && !updateProfileImage.isBlank()
+                && !Objects.equals(member.getProfileImage(), updateProfileImage)
         ) {
             storageService.validateImagesForReview(List.of(memberUpdateRequest.profileImage()), member.getId());
-            storageService.attachIfPending(List.of(profileImage), member.getId());
+            storageService.attachIfPending(List.of(updateProfileImage), member.getId());
 
-            if (member.getProfileImage() != null) {
+            if (member.getProfileImage() != null && !member.getProfileImage().isBlank()) {
                 reviewImageDeleteRepository.save(new ReviewImageDelete(member.getProfileImage()));
             }
-            member.changeProfileImage(profileImage);
+            member.changeProfileImage(updateProfileImage);
         }
     }
 

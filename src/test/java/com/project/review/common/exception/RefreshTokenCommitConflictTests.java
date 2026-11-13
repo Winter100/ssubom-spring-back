@@ -41,11 +41,7 @@ class RefreshTokenCommitConflictTests {
         competingTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 
         Long tokenId = Objects.requireNonNull(transaction.execute(status -> {
-            Member member = members.save(Member.builder()
-                    .email("conflict@example.com")
-                    .nickname("conflict-user")
-                    .password("unused")
-                    .build());
+            Member member = members.save(Member.create("conflict@example.com", "conflict-user", "unused"));
             return tokens.save(new RefreshToken(member, "original", Instant.now().plusSeconds(3600)))
                     .getId();
         }));

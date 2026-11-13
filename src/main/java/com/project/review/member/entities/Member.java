@@ -2,6 +2,8 @@ package com.project.review.member.entities;
 
 import com.project.review.auth.entities.RefreshToken;
 import com.project.review.auth.entities.Role;
+import com.project.review.common.exception.BusinessException;
+import com.project.review.common.exception.ErrorCode;
 import com.project.review.review.entities.Review;
 import com.project.review.storage.entities.ImageUploadStatus;
 import jakarta.persistence.*;
@@ -13,6 +15,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -73,18 +76,28 @@ public class Member {
     @OneToMany(mappedBy = "member")
     private List<ImageUploadStatus> imageUploadStatusList = new ArrayList<>();
 
-    @Builder
+    @Builder(access = AccessLevel.PROTECTED)
     public Member(String email, String nickname, String password) {
         this.email = email;
         this.nickname = nickname;
         this.password = password;
     }
 
+    public static Member create(String email, String nickname, String password) {
+        return Member.builder()
+                .email(email)
+                .nickname(nickname)
+                .password(password)
+                .build();
+    }
+
     public void changeName(String nickname, Instant changedAt) {
-        if (StringUtils.hasText(nickname)) {
-            this.nickname = nickname;
-            this.nicknameChangedAt = changedAt;
+        if (this.nicknameChangedAt != null && changedAt.isBefore(this.nicknameChangedAt.plus(Duration.ofDays(7)))) {
+            throw new BusinessException(ErrorCode.NICKNAME_CHANGE_NOT_ALLOWED);
         }
+
+        this.nickname = nickname;
+        this.nicknameChangedAt = changedAt;
     }
 
     public void changeProfileImage(String profileImage) {

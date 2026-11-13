@@ -25,7 +25,6 @@ public record ReviewResponse(
         List<String> cons,
         String verdict,
         String mainImageKey,
-        List<String> subImageKeys,
         MemberSummaryResponse author,
         long viewCount,
         boolean isLike,
@@ -52,8 +51,6 @@ public record ReviewResponse(
                 review.getCons(),
                 review.getVerdict(),
                 mainImageKey,
-                review.getImages().stream().filter(image -> image.getDisplayOrder() > 0)
-                        .map(ReviewImage::getImageKey).toList(),
                 MemberSummaryResponse.from(review.getAuthor()),
                 stats.viewCount(),
                 stats.isLike(),

@@ -9,7 +9,7 @@ import java.util.List;
 
 public record ImageUploadBatchRequest(
         @NotEmpty(message = "업로드할 이미지를 전달해 주세요.")
-        @Size(max = 5, message = "한 번에 최대 5개까지 발급할 수 있습니다.")
+        @Size(max = 10, message = "한 번에 최대 10개까지 발급할 수 있습니다.")
         @Valid List<@NotNull ImageUploadRequest> images
 ) {
 }

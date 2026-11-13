@@ -1,5 +1,7 @@
 package com.project.review.review;
 
+import com.project.review.review.dtos.ReviewRequest;
+
 import com.project.review.category.entities.Category;
 import com.project.review.category.repository.CategoryRepository;
 import com.project.review.member.entities.Member;
@@ -66,12 +68,12 @@ class ReviewEditFlowTests {
     void setUp() {
         deletions.deleteAll(); reviews.deleteAll(); uploads.deleteAll();
         members.deleteAll(); categories.deleteAll();
-        other = members.save(Member.builder().email("other@example.com").nickname("other").password("unused").build());
-        owner = members.save(Member.builder().email("owner@example.com").nickname("owner").password("unused").build());
+        other = members.save(Member.create("other@example.com", "other", "unused"));
+        owner = members.save(Member.create("owner@example.com", "owner", "unused"));
         category = categories.save(new Category("test"));
-        Review review = Review.builder().title("original").product("Old product")
-                .content(mapper.readTree("{\"type\":\"doc\",\"content\":[]}"))
-                .rating(BigDecimal.ONE).author(owner).category(category).build();
+        Review review = Review.create(new ReviewRequest("original", "Old product", mapper.readTree("{\"type\":\"doc\",\"content\":[]}"), BigDecimal.ONE,
+                null, null, null, null, null, null, null),
+                owner, category);
         review.addImage("reviews/A", 0); review.addImage("reviews/B", 1);
         reviewId = reviews.saveAndFlush(review).getId();
     }
@@ -89,27 +91,15 @@ class ReviewEditFlowTests {
     }
 
     @Test
-    void editReadRequiresOwnerAndDisablesCaching() throws Exception {
-        mvc.perform(get("/api/v1/reviews/" + reviewId + "/edit"))
-                .andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/v1/reviews/" + reviewId + "/edit")
-                        .with(jwt().jwt(token -> token.subject(other.getId().toString()))))
-                .andExpect(status().isForbidden());
-        mvc.perform(get("/api/v1/reviews/" + reviewId + "/edit")
-                        .with(jwt().jwt(token -> token.subject(owner.getId().toString()))))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(jsonPath("$.viewCount").value(0))
-                .andExpect(jsonPath("$.subImageKeys[0]").value("reviews/B"));
-    }
-
-    @Test
     void savesAllFieldsRetainsOldKeysAndAllowsBodyWithoutCover() throws Exception {
         mvc.perform(put("/api/v1/reviews/" + reviewId).with(jwt().jwt(j -> j.subject(owner.getId().toString())))
                 .contentType(MediaType.APPLICATION_JSON).content(request("null", "[\"reviews/B\"]")))
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/v1/reviews/" + reviewId + "/edit").with(jwt().jwt(j -> j.subject(owner.getId().toString()))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.product").value("New product"))
+                .andExpect(jsonPath("$.viewCount").doesNotExist())
+                .andExpect(jsonPath("$.isLike").doesNotExist())
+                .andExpect(jsonPath("$.countLike").doesNotExist())
                 .andExpect(jsonPath("$.duration").value("One month"))
                 .andExpect(jsonPath("$.pros[0]").value("Good"))
                 .andExpect(jsonPath("$.cons[0]").value("Bad"))

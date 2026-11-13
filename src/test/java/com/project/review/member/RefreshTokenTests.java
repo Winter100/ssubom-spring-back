@@ -74,11 +74,7 @@ class RefreshTokenTests {
     void setUp() {
         tokens.deleteAll();
         members.deleteAll();
-        member = members.save(Member.builder()
-                .email("refresh@example.com")
-                .nickname("refresh-user")
-                .password(passwordEncoder.encode("password123"))
-                .build());
+        member = members.save(Member.create("refresh@example.com", "refresh-user", passwordEncoder.encode("password123")));
     }
 
     @Test

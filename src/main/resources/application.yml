@@ -6,15 +6,16 @@ security:
     refresh-token-expires-days: ${REFRESH_TOKEN_EXPIRES_DAYS}
 
   app:
-    frontend-origin: http://localhost:3000
+    frontend-origin: ${FRONTEND_ORIGIN}
 
 spring:
   config:
     import: "optional:file:./.env[.properties]" # 실행 디렉터리의 .env를 설정 파일로 읽습니다.
   datasource:
-    url: jdbc:postgresql://localhost:5432/review_db # Docker PostgreSQL 접속 주소
-    username: review # POSTGRES_USER와 동일
-    password: ${POSTGRES_PASSWORD}
+#    url: jdbc:postgresql://${DB_HOST}:5432/${DB_NAME}?sslmode=require
+    url: jdbc:postgresql://${DB_HOST}:5432/${DB_NAME} # Docker PostgreSQL 접속 주소
+    username: ${DB_USERNAME} # POSTGRES_USER와 동일
+    password: ${DB_PASSWORD}
   data:
     web:
       pageable:
@@ -26,17 +27,7 @@ spring:
       hibernate.type.json_format_mapper: jackson3
     hibernate:
       ddl-auto: update
-
-#  datasource:
-#    url: jdbc:h2:mem:testdb # 메모리 기반 H2 데이터베이스
-#    driver-class-name: org.h2.Driver
-#    username: sa
-#    password:
-#
-#  h2:
-#    console:
-#      enabled: true # H2 웹 콘솔 활성화
-#      path: /h2-console # 웹 콘솔 접근 경로
+#    show-sql: true
 
 # R2 입력값은 프로젝트 루트 .env에 작성합니다. 입력 예시는 .env.example을 참고합니다.
 storage:

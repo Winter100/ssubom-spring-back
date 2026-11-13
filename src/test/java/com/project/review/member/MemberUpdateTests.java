@@ -52,7 +52,7 @@ class MemberUpdateTests {
     @Autowired MemberRepository members;
     @Autowired ReviewImageDeleteRepository deletions;
     @MockitoBean StorageService storage;
-    @MockitoBean(name = "imageDeletionClock") Clock clock;
+    @MockitoBean Clock clock;
     private Member member;
 
     @BeforeEach
@@ -60,8 +60,7 @@ class MemberUpdateTests {
         deletions.deleteAll();
         members.deleteAll();
         when(clock.instant()).thenReturn(NOW);
-        member = members.saveAndFlush(Member.builder().email("member@example.com")
-                .nickname("original").password("unused").build());
+        member = members.saveAndFlush(Member.create("member@example.com", "original", "unused"));
     }
 
     @Test

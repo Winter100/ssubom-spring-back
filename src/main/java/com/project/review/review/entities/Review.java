@@ -1,7 +1,11 @@
 package com.project.review.review.entities;
 
 import com.project.review.category.entities.Category;
+import com.project.review.common.exception.BusinessException;
+import com.project.review.common.exception.ErrorCode;
 import com.project.review.member.entities.Member;
+import com.project.review.review.dtos.ReviewRequest;
+import com.project.review.review.dtos.ReviewUpdateRequest;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -98,8 +102,26 @@ public class Review {
         images.clear();
     }
 
-    @Builder
-    public Review(String title,
+    public static Review create(ReviewRequest reviewRequest, Member member, Category category){
+
+        validateRating(reviewRequest.rating());
+
+        return Review.builder()
+                .title(reviewRequest.title())
+                .content(reviewRequest.content())
+                .rating(reviewRequest.rating())
+                .cons(reviewRequest.cons())
+                .pros(reviewRequest.pros())
+                .product(reviewRequest.product())
+                .duration(reviewRequest.duration())
+                .verdict(reviewRequest.verdict())
+                .author(member)
+                .category(category)
+                .build();
+    }
+
+    @Builder(access = AccessLevel.PROTECTED)
+    private Review(String title,
                   JsonNode content,
                   BigDecimal rating,
                   Member author,
@@ -124,6 +146,9 @@ public class Review {
 
     public void updateDetails(String title, JsonNode content, BigDecimal rating, String product, Category category,
                               String duration, List<String> pros, List<String> cons, String verdict) {
+
+        validateRating(rating);
+
         this.title = title;
         this.content = content;
         this.rating = rating;
@@ -135,5 +160,18 @@ public class Review {
         this.verdict = verdict;
     }
 
+    public void validateAuthor(Long memberId) {
+        if (!author.getId().equals(memberId)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+    }
+
+    private static void validateRating(BigDecimal rating) {
+        if (rating == null
+                || rating.compareTo(BigDecimal.ZERO) < 0
+                || rating.compareTo(BigDecimal.valueOf(5)) > 0) {
+            throw new IllegalArgumentException("평점은 0~5 사이여야 합니다.");
+        }
+    }
 
 }

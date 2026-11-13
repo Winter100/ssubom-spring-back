@@ -43,8 +43,8 @@ public record ReviewUpdateRequest(
         @Size(max = 1024, message = "대표 이미지 키는 최대 1024자입니다.")
         String mainImageKey,
 
-        @Schema(description = "서브 이미지 객체 키 목록 (선택, 최대 4개)")
-        @Size(max = 4, message = "서브 이미지는 최대 4개까지 등록할 수 있습니다.")
+        @Schema(description = "서브 이미지 객체 키 목록 (선택, 최대 10개)")
+        @Size(max = 10, message = "서브 이미지는 최대 10개까지 등록할 수 있습니다.")
         List<@NotBlank(message = "서브 이미지 키는 비어 있을 수 없습니다.")
         @Size(max = 1024, message = "서브 이미지 키는 최대 1024자입니다.") String> subImageKeys,
 
@@ -57,7 +57,7 @@ public record ReviewUpdateRequest(
     @AssertTrue(message = "내용은 type이 doc이고 content가 배열인 JSON 문서여야 합니다.")
     public boolean isContentDocumentValid() {
         return content == null || content.isObject()
-                && "doc".equals(content.path("type").stringValue())
+                && "doc".equals(content.path("type").asString(""))
                 && content.path("content").isArray();
     }
 

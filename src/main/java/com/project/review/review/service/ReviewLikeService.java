@@ -56,12 +56,12 @@ public class ReviewLikeService {
     }
 
     @Transactional
-    public void insertLike(Review review, Member member) {
-        reviewLikeRepository.insertLike(member.getId(), review.getId());
+    public void insertLike(Long reviewId, Long memberId) {
+        reviewLikeRepository.insertLike(memberId, reviewId);
     }
 
     @Transactional
-    public void deleteLike(Review review, Member member) {
-        reviewLikeRepository.deleteLike(member.getId(), review.getId());
+    public void deleteLike(Long reviewId, Long memberId) {
+        reviewLikeRepository.deleteLike(memberId,reviewId);
     }
 }

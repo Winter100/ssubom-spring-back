@@ -7,7 +7,6 @@ import com.project.review.common.exception.ErrorCode;
 import com.project.review.member.entities.Member;
 import com.project.review.member.repository.MemberRepository;
 import com.project.review.review.dtos.ReviewRequest;
-import com.project.review.review.dtos.ReviewResponse;
 import com.project.review.review.repository.ReviewRepository;
 import com.project.review.review.service.ReviewService;
 import com.project.review.storage.entities.ImageUploadStatus;
@@ -17,7 +16,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -68,7 +66,6 @@ class ReviewUploadTransactionTests {
 
     private Member member;
     private Long categoryId;
-    private Jwt jwt;
 
     @BeforeEach
     void setUp() {
@@ -76,18 +73,15 @@ class ReviewUploadTransactionTests {
         uploads.deleteAll();
         members.deleteAll();
         categories.deleteAll();
-        member = members.save(Member.builder().email("upload@example.com")
-                .nickname("upload-user").password("unused").build());
+        member = members.save(Member.create("upload@example.com", "upload-user", "unused"));
         categoryId = categories.save(new Category("업로드 테스트")).getId();
-        jwt = Jwt.withTokenValue("test").header("alg", "HS256")
-                .subject(member.getId().toString()).build();
     }
 
     @Test
     void createsImageLessReviewWithoutR2() {
-        ReviewResponse result = reviewService.create(request("후기", null, null), jwt);
-        assertThat(result.mainImageKey()).isNull();
-        assertThat(result.subImageKeys()).isEmpty();
+        reviewService.create(request("후기", null, null), member.getId());
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx ->
+                assertThat(reviews.findAll().getFirst().getImages()).isEmpty());
         assertThat(reviews.count()).isEqualTo(1);
         verifyNoInteractions(s3Client);
     }
@@ -98,18 +92,20 @@ class ReviewUploadTransactionTests {
         addUpload("reviews/a-sub");
         mockHead(() -> {});
 
-        ReviewResponse result = reviewService.create(
-                request("후기", "reviews/z-main", List.of("reviews/a-sub")), jwt);
+        reviewService.create(
+                request("후기", "reviews/z-main", List.of("reviews/a-sub")), member.getId());
 
-        assertThat(result.mainImageKey()).isEqualTo("reviews/z-main");
-        assertThat(result.subImageKeys()).containsExactly("reviews/a-sub");
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx ->
+                assertThat(reviews.findAll().getFirst().getImages())
+                        .extracting(image -> image.getImageKey())
+                        .containsExactly("reviews/z-main", "reviews/a-sub"));
         assertThat(uploads.findAll()).allMatch(upload -> upload.getStatus() == UploadStatus.ATTACHED);
         assertThat(reviews.count()).isEqualTo(1);
     }
 
     @Test
     void rejectsUnissuedKeyBeforeR2() {
-        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/missing", null), jwt))
+        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/missing", null), member.getId()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(reviews.count()).isZero();
         verifyNoInteractions(s3Client);
@@ -121,7 +117,7 @@ class ReviewUploadTransactionTests {
         when(s3Client.headObject(org.mockito.ArgumentMatchers.<Consumer<HeadObjectRequest.Builder>>any()))
                 .thenReturn(HeadObjectResponse.builder().contentLength(101L).contentType("image/png").build());
 
-        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/image", null), jwt))
+        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/image", null), member.getId()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(status("reviews/image")).isEqualTo(UploadStatus.PENDING);
         assertThat(reviews.count()).isZero();
@@ -133,7 +129,7 @@ class ReviewUploadTransactionTests {
         when(s3Client.headObject(org.mockito.ArgumentMatchers.<Consumer<HeadObjectRequest.Builder>>any()))
                 .thenReturn(HeadObjectResponse.builder().contentLength(100L).contentType("image/jpeg").build());
 
-        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/image", null), jwt))
+        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/image", null), member.getId()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(status("reviews/image")).isEqualTo(UploadStatus.PENDING);
         assertThat(reviews.count()).isZero();
@@ -151,7 +147,7 @@ class ReviewUploadTransactionTests {
                     UploadStatus.PENDING, Instant.now().minusSeconds(300), Instant.now().minusSeconds(1)));
         }));
 
-        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/image", null), jwt))
+        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/image", null), member.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.IMAGE_UPLOAD_CONFLICT));
         assertThat(status("reviews/image")).isEqualTo(UploadStatus.PENDING);
@@ -163,7 +159,7 @@ class ReviewUploadTransactionTests {
         addUpload("reviews/image");
         mockHead(() -> {});
 
-        assertThatThrownBy(() -> reviewService.create(request("x".repeat(31), "reviews/image", null), jwt))
+        assertThatThrownBy(() -> reviewService.create(request("x".repeat(31), "reviews/image", null), member.getId()))
                 .isInstanceOf(RuntimeException.class);
         assertThat(status("reviews/image")).isEqualTo(UploadStatus.PENDING);
         assertThat(reviews.count()).isZero();
@@ -177,7 +173,7 @@ class ReviewUploadTransactionTests {
                 uploads.attachIfPending("reviews/z", member.getId(), Instant.now(),
                         UploadStatus.PENDING, UploadStatus.ATTACHED)));
 
-        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/a", List.of("reviews/z")), jwt))
+        assertThatThrownBy(() -> reviewService.create(request("후기", "reviews/a", List.of("reviews/z")), member.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.IMAGE_UPLOAD_CONFLICT));
         assertThat(status("reviews/a")).isEqualTo(UploadStatus.PENDING);
@@ -208,7 +204,7 @@ class ReviewUploadTransactionTests {
 
     private boolean attemptSharedReview() {
         try {
-            reviewService.create(request("후기", "reviews/shared", null), jwt);
+            reviewService.create(request("후기", "reviews/shared", null), member.getId());
             return true;
         } catch (BusinessException ex) {
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.IMAGE_UPLOAD_CONFLICT);
@@ -243,6 +239,7 @@ class ReviewUploadTransactionTests {
     }
 
     private ReviewRequest request(String title, String mainKey, List<String> subKeys) {
-        return new ReviewRequest(title, "Product", textDocument("내용"), new BigDecimal("4.5"), categoryId, mainKey, subKeys, null, null, null, null);
+        return new ReviewRequest(title, "상품", textDocument("내용"), new BigDecimal("4.5"),
+                categoryId, mainKey, subKeys, null, null, null, null);
     }
 }

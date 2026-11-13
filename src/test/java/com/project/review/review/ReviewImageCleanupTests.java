@@ -1,5 +1,7 @@
 package com.project.review.review;
 
+import com.project.review.review.dtos.ReviewRequest;
+
 import com.project.review.category.entities.Category;
 import com.project.review.category.repository.CategoryRepository;
 import com.project.review.member.entities.Member;
@@ -151,7 +153,7 @@ class ReviewImageCleanupTests {
 
     @Test
     void closesLegacyPendingUploadBeforeReferenceCheckAndR2Deletion() {
-        Member member = members.save(Member.builder().email("legacy@example.com").nickname("legacy").password("unused").build());
+        Member member = members.save(Member.create("legacy@example.com", "legacy", "unused"));
         uploads.saveAndFlush(new ImageUploadStatus(member, "reviews/legacy", "image/png", 100L,
                 UploadStatus.PENDING, NOW.plusSeconds(300), NOW.plusSeconds(3600)));
         enqueue("reviews/legacy", NOW);
@@ -180,16 +182,17 @@ class ReviewImageCleanupTests {
 
     @Test
     void retainsGalleryAndNestedBodyReferencesIncludingPublicUrls() {
-        Member member = members.save(Member.builder().email("refs@example.com").nickname("refs").password("unused").build());
+        Member member = members.save(Member.create("refs@example.com", "refs", "unused"));
         Category category = categories.save(new Category("refs"));
-        Review review = Review.builder().title("refs").product("product").author(member).category(category)
-                .rating(BigDecimal.ONE).content(JsonMapper.builder().build().readTree("""
+        Review review = Review.create(new ReviewRequest("refs", "product", JsonMapper.builder().build().readTree("""
                     {"type":"doc","content":[{"type":"blockquote","content":[
                       {"type":"image","attrs":{"src":"reviews/body"}},
                       {"type":"image","attrs":{"src":"https://images.example.com/reviews/url"}},
                       {"type":"image","attrs":{"src":"https://external.example.com/reviews/external"}}
                     ]}]}
-                    """)).build();
+                    """), BigDecimal.ONE,
+                null, null, null, null, null, null, null),
+                member, category);
         review.addImage("reviews/gallery", 0);
         reviews.saveAndFlush(review);
         ReviewImageDelete gallery = enqueue("reviews/gallery", NOW);

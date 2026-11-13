@@ -65,8 +65,8 @@ class ReviewLikeServiceTests {
         when(review.getId()).thenReturn(30L);
         when(member.getId()).thenReturn(7L);
 
-        service.insertLike(review, member);
-        service.deleteLike(review, member);
+        service.insertLike(review.getId(), member.getId());
+        service.deleteLike(review.getId(), member.getId());
 
         verify(repository).insertLike(7L, 30L);
         verify(repository).deleteLike(7L, 30L);

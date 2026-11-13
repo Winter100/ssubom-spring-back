@@ -1,10 +1,13 @@
 package com.project.review.review;
 
+import com.project.review.review.dtos.ReviewRequest;
+
 import com.project.review.category.entities.Category;
 import com.project.review.category.repository.CategoryRepository;
 import com.project.review.member.entities.Member;
 import com.project.review.member.repository.MemberRepository;
 import com.project.review.review.dtos.ReviewResponse;
+import com.project.review.review.dtos.ReviewStats;
 import com.project.review.review.entities.Review;
 import com.project.review.review.repository.ReviewRepository;
 import jakarta.persistence.EntityManager;
@@ -15,16 +18,11 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
-import java.util.List;
 
 import static com.project.review.review.ReviewContentFixtures.textDocument;
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DataJpaTest(properties = {
-        "spring.config.import=",
-        "security.jwt.access-token-expires-minutes=15",
-        "security.jwt.refresh-token-expires-days=7"
-})
+@DataJpaTest(properties = "spring.config.import=")
 class ReviewContentPersistenceTests {
 
     @Autowired private ReviewRepository reviews;
@@ -44,17 +42,17 @@ class ReviewContentPersistenceTests {
                   {"type":"image","attrs":{"imageKey":"reviews/body-image","alt":"제품 사진"}}
                 ]}
                 """);
-        Member author = members.save(Member.builder().email("json@example.com")
-                .nickname("json-user").password("unused").build());
+        Member author = members.save(Member.create("json@example.com", "json-user", "unused"));
         Category category = categories.save(new Category("JSON 테스트"));
-        Review review = reviews.saveAndFlush(Review.builder().title("후기").product("Product").content(content)
-                .rating(BigDecimal.ONE).author(author).category(category).build());
+        Review review = reviews.saveAndFlush(Review.create(new ReviewRequest("후기", "test product", content, BigDecimal.ONE,
+                null, null, null, null, null, null, null),
+                author, category));
         Long reviewId = review.getId();
         entityManager.clear();
 
         Review loaded = reviews.findById(reviewId).orElseThrow();
         assertThat(loaded.getContent()).isEqualTo(content);
-        ReviewResponse response = ReviewResponse.from(loaded, null, List.of(), 0L);
+        ReviewResponse response = ReviewResponse.from(loaded, new ReviewStats(0L, false, 0L));
         JsonNode responseJson = mapper.readTree(mapper.writeValueAsString(response));
         assertThat(responseJson.path("content").isObject()).isTrue();
         assertThat(responseJson.path("content")).isEqualTo(content);

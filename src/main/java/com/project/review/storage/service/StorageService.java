@@ -18,10 +18,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -50,8 +49,12 @@ public class StorageService {
     @Transactional
     public List<ImageUploadResponse> uploadUrls(ImageUploadBatchRequest batchRequest, Member member) {
 
+        // 응답 List
         List<ImageUploadResponse> responseList = new ArrayList<>();
+
+        // 업로드 List
         List<ImageUploadStatus> imageUploadStatusList = new ArrayList<>();
+
         Instant now = Instant.now();
         Instant attachExpiresAt = now.plus(Duration.ofHours(1));
 
@@ -90,7 +93,7 @@ public class StorageService {
                     attachExpiresAt
             );
 
-            responseList.add(new ImageUploadResponse(url, key));
+            responseList.add(new ImageUploadResponse(request.name(), url, key, request.clientId()));
             imageUploadStatusList.add(imageUploadStatus);
         }
 
@@ -200,14 +203,6 @@ public class StorageService {
         }
     }
 
-    /** 공개 읽기가 허용된 객체의 고정 URL을 만듭니다. 파일 존재 여부는 확인하지 않습니다. */
-    public String createReadUrl(String key) {
-        return UriComponentsBuilder.fromUriString(publicBaseUrl)
-                .pathSegment(key.split("/"))
-                .build()
-                .encode()
-                .toUriString();
-    }
 
     /** 과거 본문 전용 이미지의 PENDING 상태를 닫아 참조 검사 이후 새 연결을 막습니다. */
     public void preventPendingAttachment(Set<String> imageKeys) {

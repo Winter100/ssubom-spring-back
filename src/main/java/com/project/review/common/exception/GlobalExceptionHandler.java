@@ -2,23 +2,24 @@ package com.project.review.common.exception;
 
 import com.project.review.auth.entities.RefreshToken;
 import com.project.review.common.dtos.CustomErrorResponse;
-import jakarta.persistence.OptimisticLockException;
-import org.hibernate.StaleObjectStateException;
-import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import com.project.review.common.dtos.CustomErrorResponse.FieldError;
 import com.project.review.member.exception.DuplicateMemberException;
 import com.project.review.member.exception.MemberNotFoundException;
 import com.project.review.member.exception.RefreshTokenException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.persistence.OptimisticLockException;
 import com.project.review.review.exception.ReviewNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.StaleObjectStateException;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -32,27 +33,21 @@ import java.util.Locale;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    private record FieldErrorResponse(
-            String field,
-            String message
-    ) {
-    }
-
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<List<FieldErrorResponse>> handleNotValid(
+    public ResponseEntity<CustomErrorResponse> handleNotValid(
             MethodArgumentNotValidException ex
     ) {
-        List<FieldErrorResponse> errors = ex.getBindingResult()
+        List<FieldError> errors = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
-                .map(error -> new FieldErrorResponse(
+                .map(error -> new FieldError(
                         error.getField(),
                         error.getDefaultMessage()
                 ))
                 .toList();
 
         return ResponseEntity.status(ex.getStatusCode())
-                .body(errors);
+                .body(new CustomErrorResponse("입력값을 확인해 주세요.", errors));
     }
 
     @ExceptionHandler(BusinessException.class) // 모든 BusinessException 처리
@@ -135,9 +130,9 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "요청 본문이 없거나 JSON 형식이 올바르지 않습니다.");
     }
 
-    @ExceptionHandler(ReviewNotFoundException.class)
-    public ResponseEntity<CustomErrorResponse> handleReviewNotFound(
-            ReviewNotFoundException ex
+    @ExceptionHandler({ReviewNotFoundException.class, MemberNotFoundException.class})
+    public ResponseEntity<CustomErrorResponse> handleNotFound(
+            RuntimeException ex
     ) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
@@ -146,10 +141,9 @@ public class GlobalExceptionHandler {
     public ResponseEntity<CustomErrorResponse> handleTypeMismatch(
             MethodArgumentTypeMismatchException ex
     ) {
-        return error(
-                HttpStatus.BAD_REQUEST,
-                "요청 파라미터 '" + ex.getName() + "'의 형식이 올바르지 않습니다."
-        );
+        String message = "요청 파라미터 '" + ex.getName() + "'의 형식이 올바르지 않습니다.";
+        return ResponseEntity.badRequest()
+                .body(new CustomErrorResponse(message, List.of(new FieldError(ex.getName(), message))));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -175,14 +169,6 @@ public class GlobalExceptionHandler {
         log.error("회원 중복으로 분류할 수 없는 DB 무결성 오류가 발생했습니다.", ex);
         return error(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
     }
-
-    @ExceptionHandler(MemberNotFoundException.class)
-    private ResponseEntity<CustomErrorResponse> handleMemberNotFound(
-            MemberNotFoundException ex
-    ) {
-        return error(HttpStatus.NOT_FOUND, ex.getMessage());
-    }
-
 
     private String normalizeConstraintName(String constraintName) {
         if (constraintName == null || constraintName.isBlank()) {

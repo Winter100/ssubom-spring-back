@@ -1,30 +1,18 @@
 package com.project.review.review.controller;
 
-import com.project.review.review.dtos.ReviewRequest;
-import com.project.review.review.dtos.ReviewPageResponse;
-import com.project.review.review.dtos.ReviewResponse;
-import com.project.review.review.dtos.ReviewUpdateRequest;
+import com.project.review.auth.service.TokenService;
+import com.project.review.review.dtos.*;
 import com.project.review.review.service.ReviewService;
-import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
-
-import java.time.Duration;
-import java.util.UUID;
 
 @Tag(name = "Review", description = "리뷰 조회, 생성 및 삭제 API")
 @RestController
@@ -33,77 +21,50 @@ import java.util.UUID;
 public class ReviewController {
 
     private final ReviewService reviewService;
+    private final TokenService tokenService;
 
-    @Operation(summary = "리뷰 목록 조회", description = "페이지는 1부터 시작하며, 최신순으로 조회합니다. 페이지 크기는 1~100입니다.")
+    //Todo 스웨거 문서 작성하기
+
     @GetMapping
     public ResponseEntity<ReviewPageResponse> findAll(
             @RequestParam(name = "page", defaultValue = "1") int page,
             @RequestParam(name = "size", defaultValue = "50") int size,
+            @RequestParam(name = "searchType", defaultValue = "title") String searchType,
+            @RequestParam(name = "categoryId", required = false) Long categoryId,
+            @RequestParam(name = "query", required = false) String query,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        return ResponseEntity.ok(reviewService.findAll(page, size, jwt));
+        Long memberId = jwt != null ? tokenService.extractMemberId(jwt) : null;
+        return ResponseEntity.ok(reviewService.findAll(page, size, searchType, categoryId, query, memberId));
     }
 
-    @Operation(summary = "리뷰 상세 조회", description = "인증 없이 조회합니다. 방문자 쿠키 기준으로 한국 시간 하루 1회 조회수가 증가합니다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "400", description = "ID가 Long으로 변환할 수 없는 형식"),
-            @ApiResponse(responseCode = "404", description = "리뷰를 찾을 수 없음")
-    })
     @GetMapping("/{id}")
     public ResponseEntity<ReviewResponse> findById(
             @Parameter(description = "리뷰 ID", example = "1") @PathVariable("id") Long id,
-            @CookieValue(name = "reviewVisitorId", required = false) String visitorCookie,
-            HttpServletRequest request,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        UUID visitorId = parseVisitorId(visitorCookie);
-        boolean issueCookie = visitorId == null;
-        if (issueCookie) {
-            visitorId = UUID.randomUUID();
-        }
-        ReviewResponse review = reviewService.findByIdAndCountView(id, visitorId, jwt);
-        ResponseEntity.BodyBuilder response = ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store");
-        if (issueCookie) {
-            ResponseCookie cookie = ResponseCookie.from("reviewVisitorId", visitorId.toString())
-                    .httpOnly(true)
-                    .secure(request.isSecure())
-                    .sameSite("Lax")
-                    .path("/")
-                    .maxAge(Duration.ofDays(365))
-                    .build();
-            response.header(HttpHeaders.SET_COOKIE, cookie.toString());
-        }
-        return response.body(review);
+        Long memberId = jwt != null ? tokenService.extractMemberId(jwt) : null;
+        return ResponseEntity.ok().body(reviewService.findByIdAndCountView(id, memberId));
     }
 
     @GetMapping("/{id}/edit")
-    public ResponseEntity<ReviewResponse> findByIdEditView(
-            @PathVariable("id") Long id,
+    public ResponseEntity<ReviewEditResponse> findByIdEditView(
+            @Parameter(description = "리뷰 ID", example = "1") @PathVariable("id") Long id,
             @AuthenticationPrincipal Jwt jwt
     ) {
+        Long memberId = tokenService.extractMemberId(jwt);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(reviewService.findByIdEditView(id, jwt));
+                .body(reviewService.findByIdEditView(id, memberId));
     }
 
-    @Operation(
-            summary = "리뷰 생성",
-            description = "인증된 회원의 리뷰를 저장합니다. 대표 이미지 1개와 서브 이미지 최대 4개는 선택 사항입니다."
-    )
-    @SecurityRequirement(name = "bearerAuth")
-    @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "생성 성공 및 공개 이미지 URL 반환"),
-            @ApiResponse(responseCode = "400", description = "리뷰 또는 이미지 키 검증 실패"),
-            @ApiResponse(responseCode = "401", description = "인증 필요 또는 잘못된 회원 인증 정보"),
-            @ApiResponse(responseCode = "404", description = "작성자 또는 카테고리를 찾을 수 없음")
-    })
     @PostMapping
-    public ResponseEntity<ReviewResponse> create(
+    public ResponseEntity<Void> create(
             @Valid @RequestBody ReviewRequest reviewRequest,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        ReviewResponse review = reviewService.create(reviewRequest, jwt);
-        return ResponseEntity.status(HttpStatus.CREATED).body(review);
+        Long memberId = tokenService.extractMemberId(jwt);
+        reviewService.create(reviewRequest, memberId);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
     @PutMapping("/{id}")
@@ -111,25 +72,20 @@ public class ReviewController {
             @PathVariable("id") Long id,
             @Valid @RequestBody ReviewUpdateRequest reviewUpdateRequest,
             @AuthenticationPrincipal Jwt jwt
-            ){
-        reviewService.update(id, reviewUpdateRequest, jwt);
+    ) {
+        Long memberId = tokenService.extractMemberId(jwt);
+        reviewService.update(id, reviewUpdateRequest, memberId);
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "리뷰 삭제", description = "작성자 본인의 리뷰와 연결된 이미지 DB 행을 삭제합니다. 스토리지 객체는 다음 한국 자정에 삭제합니다.")
-    @SecurityRequirement(name = "bearerAuth")
-    @ApiResponses({
-            @ApiResponse(responseCode = "204", description = "삭제 성공"),
-            @ApiResponse(responseCode = "401", description = "인증 필요"),
-            @ApiResponse(responseCode = "403", description = "리뷰 작성자가 아님"),
-            @ApiResponse(responseCode = "404", description = "리뷰를 찾을 수 없음")
-    })
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> remove(
             @PathVariable("id") Long id,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        reviewService.remove(id, jwt);
+
+        Long memberId = tokenService.extractMemberId(jwt);
+        reviewService.remove(id, memberId);
 
         return ResponseEntity.noContent().build();
     }
@@ -140,7 +96,8 @@ public class ReviewController {
             @PathVariable("id") Long reviewId,
             @AuthenticationPrincipal Jwt jwt
     ){
-        reviewService.insertLike(reviewId, jwt);
+        Long memberId = tokenService.extractMemberId(jwt);
+        reviewService.insertLike(reviewId, memberId);
 
         return ResponseEntity.noContent().build();
     }
@@ -151,20 +108,9 @@ public class ReviewController {
             @PathVariable("id") Long reviewId,
             @AuthenticationPrincipal Jwt jwt
     ){
-        reviewService.deleteLike(reviewId, jwt);
+        Long memberId = tokenService.extractMemberId(jwt);
+        reviewService.deleteLike(reviewId, memberId);
 
         return ResponseEntity.noContent().build();
-    }
-
-    private UUID parseVisitorId(String value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            UUID visitorId = UUID.fromString(value);
-            return visitorId.toString().equalsIgnoreCase(value) ? visitorId : null;
-        } catch (IllegalArgumentException exception) {
-            return null;
-        }
     }
 }
