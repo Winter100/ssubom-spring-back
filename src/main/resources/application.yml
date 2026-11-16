@@ -20,6 +20,9 @@ spring:
     web:
       pageable:
         max-page-size: 100
+  h2:
+    console:
+      enabled: false
 
   jpa:
     properties:

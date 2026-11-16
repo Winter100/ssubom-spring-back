@@ -55,13 +55,12 @@ public class SecurityConfig {
     ) throws Exception {
         http.cors(Customizer.withDefaults())
                 .csrf((csrf) -> csrf.disable())
-                .headers(headers -> headers
-                        .frameOptions(frame -> frame.sameOrigin()) // H2 콘솔 iframe 허용
-                )
                 .authorizeHttpRequests(auth -> {
                     // 서버 내부 오류 응답은 원래 상태 코드로 전달합니다.
                     auth.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                            .requestMatchers(HttpMethod.GET, "/api/v1/reviews/*/edit").authenticated()
+                            .requestMatchers(HttpMethod.GET,
+                                    "/api/v1/reviews/*/edit"
+                                    ).authenticated()
                             .requestMatchers(
                                     HttpMethod.GET,
                                     "/api/v1/categories",
