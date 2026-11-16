@@ -27,7 +27,7 @@ import lombok.NoArgsConstructor;
                 name = "uk_review_images_review_order", columnNames = {"review_id", "display_order"}
         ),
         check = @CheckConstraint(
-                name = "ck_review_images_display_order", constraint = "display_order BETWEEN 0 AND 4"
+                name = "ck_review_images_display_order", constraint = "display_order BETWEEN 0 AND 10"
         )
 )
 @Getter

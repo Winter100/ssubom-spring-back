@@ -37,7 +37,7 @@ public record ReviewRequest(
         BigDecimal rating,
 
         @Schema(description = "카테고리 아이디", example = "2")
-        @NotNull(message = "카테고리 아이디는 필수입니다.")
+//        @NotNull(message = "카테고리 아이디는 필수입니다.")
         @Positive(message = "카테고리 아이디는 양수여야 합니다.")
         Long categoryId,
 

@@ -12,14 +12,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Todo
- * 카테고리 테이블
- * - 아이디
- * - 카테고리명
- * - 리뷰는 1개의 카테고리를 갖게됨
- */
-
 @Entity
 @Table(name = "categories", uniqueConstraints = {
         @UniqueConstraint(name = "uk_categories_category", columnNames = "category")
@@ -34,6 +26,9 @@ public class Category {
 
     @Column(nullable = false, length = 255)
     private String category;
+
+    @Column
+    private String description;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
