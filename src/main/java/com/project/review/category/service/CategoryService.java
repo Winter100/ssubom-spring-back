@@ -20,11 +20,10 @@ public class CategoryService {
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> findAll() {
-        List<Category> categories = categoryRepository.findAll();
+        List<Category> categories = categoryRepository.findAllByOrderByIdAsc();
         return categories.stream().map(CategoryResponse::from).toList();
     }
 
-    // 리뷰 생성 시 연관관계에 사용할 수 있도록 응답 DTO 대신 엔티티를 반환합니다.
     @Transactional(readOnly = true)
     public Category findById(Long categoryId) {
         return categoryRepository.findById(categoryId).orElseThrow(() ->

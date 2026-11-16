@@ -1,12 +1,13 @@
 package com.project.review.common.config;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import com.project.review.auth.service.ExistingMemberValidator;
+import com.project.review.member.repository.MemberRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2Error;
-import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 
@@ -40,8 +41,10 @@ public class JwtConfig {
     }
 
     @Bean
+    @Primary
     public JwtDecoder jwtDecoder (
             SecretKey jwtKey,
+            MemberRepository members,
             @Value("${security.jwt.issuer}")
             String issuer
     ){
@@ -53,10 +56,26 @@ public class JwtConfig {
         // 리프레시 토큰을 Bearer 액세스 토큰으로 사용하는 요청은 거절합니다.
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
                 JwtValidators.createDefaultWithIssuer(issuer),
-                jwt -> "refresh".equals(jwt.getClaimAsString("token_use"))
-                        ? OAuth2TokenValidatorResult.failure(new OAuth2Error(
-                                "invalid_token", "리프레시 토큰은 API 인증에 사용할 수 없습니다.", null))
-                        : OAuth2TokenValidatorResult.success()
+                new JwtClaimValidator<String>("token_type", "access"::equals),
+                new ExistingMemberValidator(members)
+        ));
+
+        return decoder;
+    }
+
+    @Bean
+    public JwtDecoder refreshTokenDecoder(
+            SecretKey jwtKey,
+            @Value("${security.jwt.issuer}") String issuer
+    ) {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtKey)
+                .macAlgorithm(MacAlgorithm.HS256)
+                .build();
+
+        // 만료된 토큰도 DB에서 삭제할 수 있도록 시간 검증은 재발급 서비스에서 수행합니다.
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                new JwtIssuerValidator(issuer),
+                new JwtClaimValidator<String>("token_type", "refresh"::equals)
         ));
 
         return decoder;

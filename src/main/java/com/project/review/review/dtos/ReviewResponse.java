@@ -3,7 +3,9 @@ package com.project.review.review.dtos;
 import com.project.review.category.dtos.CategoryResponse;
 import com.project.review.member.dtos.MemberSummaryResponse;
 import com.project.review.review.entities.Review;
+import com.project.review.review.entities.ReviewImage;
 import io.swagger.v3.oas.annotations.media.Schema;
+import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -14,26 +16,45 @@ public record ReviewResponse(
         Long id,
         String title,
         CategoryResponse category,
-        String content,
+        String product,
+        JsonNode content,
         BigDecimal rating,
         Instant createdAt,
-        String mainImageUrl,
-        List<String> subImageUrls,
-        MemberSummaryResponse author
+        String duration,
+        List<String> pros,
+        List<String> cons,
+        String verdict,
+        String mainImageKey,
+        MemberSummaryResponse author,
+        long viewCount,
+        boolean isLike,
+        Long likeCount
 ) {
 
-    // 공개 URL 생성은 서비스가 담당하고, DTO는 응답 필드 변환만 수행합니다.
-    public static ReviewResponse from(Review review, String mainImageUrl, List<String> subImageUrls) {
+    public static ReviewResponse from(Review review, ReviewStats stats) {
+        String mainImageKey = review.getImages().stream()
+                .filter(image -> image.getDisplayOrder() == 0)
+                .findFirst()
+                .map(ReviewImage::getImageKey)
+                .orElse(null);
+
         return new ReviewResponse(
                 review.getId(),
                 review.getTitle(),
                 CategoryResponse.from(review.getCategory()),
+                review.getProduct(),
                 review.getContent(),
                 review.getRating(),
                 review.getCreatedAt(),
-                mainImageUrl,
-                subImageUrls,
-                MemberSummaryResponse.from(review.getAuthor())
+                review.getDuration(),
+                review.getPros(),
+                review.getCons(),
+                review.getVerdict(),
+                mainImageKey,
+                MemberSummaryResponse.from(review.getAuthor()),
+                stats.viewCount(),
+                stats.isLike(),
+                stats.countLike()
         );
     }
 }

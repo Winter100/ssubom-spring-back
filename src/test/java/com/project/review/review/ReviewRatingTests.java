@@ -7,6 +7,10 @@ import com.project.review.member.repository.MemberRepository;
 import com.project.review.review.dtos.ReviewRequest;
 import com.project.review.review.entities.Review;
 import com.project.review.review.repository.ReviewRepository;
+import com.project.review.review.repository.ReviewViewRepository;
+import com.project.review.storage.entities.ImageUploadStatus;
+import com.project.review.storage.entities.UploadStatus;
+import com.project.review.storage.repository.ImageUploadRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,12 +22,20 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
+import java.util.function.Consumer;
 
+import static com.project.review.review.ReviewContentFixtures.textDocument;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -62,17 +74,19 @@ class ReviewRatingTests {
     private EntityManager entityManager;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private ImageUploadRepository uploads;
+    @MockitoBean
+    private S3Client s3Client;
+    @MockitoBean
+    private ReviewViewRepository views;
 
     private Long memberId;
     private Long categoryId;
 
     @BeforeEach
     void setUp() {
-        memberId = members.save(Member.builder()
-                .email("rating@example.com")
-                .nickname("rating-user")
-                .password("unused-in-this-test")
-                .build()).getId();
+        memberId = members.save(Member.create("rating@example.com", "rating-user", "unused-in-this-test")).getId();
         categoryId = categories.save(new Category("평점 테스트")).getId();
     }
 
@@ -83,8 +97,7 @@ class ReviewRatingTests {
                         .with(jwt().jwt(token -> token.subject(memberId.toString())))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody(rating)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.rating").value(new BigDecimal(rating).doubleValue()));
+                .andExpect(status().isCreated());
 
         reviews.flush();
         entityManager.clear();
@@ -92,7 +105,7 @@ class ReviewRatingTests {
                 .satisfies(review -> assertThat(review.getRating()).isEqualByComparingTo(rating));
         mvc.perform(get("/api/v1/reviews"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].rating").value(new BigDecimal(rating).doubleValue()));
+                .andExpect(jsonPath("$.content[0].rating").value(new BigDecimal(rating).doubleValue()));
     }
 
     @ParameterizedTest
@@ -102,24 +115,38 @@ class ReviewRatingTests {
                         .with(jwt().jwt(token -> token.subject(memberId.toString())))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new ReviewRequest(
-                                "이미지 검증", "선택 이미지도 빈 키는 허용하지 않습니다.", BigDecimal.ONE,
-                                categoryId, key, List.of()))))
+                                "이미지 검증", "상품", textDocument("선택 이미지도 빈 키는 허용하지 않습니다."), BigDecimal.ONE,
+                                categoryId, key, List.of(), null, null, null, null))))
                 .andExpect(status().isBadRequest());
         assertThat(reviews.count()).isZero();
     }
 
     @Test
-    void returnsPublicImageUrlsWithEstablishedFieldNames() throws Exception {
+    void returnsImageKeysWithEstablishedFieldNames() throws Exception {
+        Member member = members.findById(memberId).orElseThrow();
+        for (String key : List.of("reviews/main.png", "reviews/sub.png")) {
+            uploads.save(new ImageUploadStatus(member, key, "image/png", 100L, UploadStatus.PENDING,
+                    Instant.now().plusSeconds(300), Instant.now().plusSeconds(3600)));
+        }
+        when(s3Client.headObject(org.mockito.ArgumentMatchers.<Consumer<HeadObjectRequest.Builder>>any()))
+                .thenReturn(HeadObjectResponse.builder().contentLength(100L).contentType("image/png").build());
         mvc.perform(post("/api/v1/reviews")
                         .with(jwt().jwt(token -> token.subject(memberId.toString())))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new ReviewRequest(
-                                "이미지 응답", "공개 URL 필드와 저장 키를 구분합니다.", BigDecimal.ONE,
-                                categoryId, "reviews/main.png", List.of("reviews/sub.png")))))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.mainImageUrl").value("https://images.example.com/reviews/main.png"))
-                .andExpect(jsonPath("$.subImageUrls[0]").value("https://images.example.com/reviews/sub.png"))
-                .andExpect(jsonPath("$.mainImageKey").doesNotExist());
+                                "이미지 응답", "상품", textDocument("공개 URL 필드와 저장 키를 구분합니다."), BigDecimal.ONE,
+                                categoryId, "reviews/main.png", List.of("reviews/sub.png"), null, null, null, null))))
+                .andExpect(status().isCreated());
+        reviews.flush();
+        entityManager.clear();
+        Long reviewId = reviews.findAll().getFirst().getId();
+        mvc.perform(get("/api/v1/reviews/{id}", reviewId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mainImageKey").value("reviews/main.png"))
+                .andExpect(jsonPath("$.subImageKeys").doesNotExist());
+        assertThat(reviews.findById(reviewId).orElseThrow().getImages())
+                .extracting(image -> image.getImageKey())
+                .containsExactly("reviews/main.png", "reviews/sub.png");
     }
 
     @Test
@@ -138,8 +165,9 @@ class ReviewRatingTests {
     @Test
     void anotherMemberCannotDeleteReview() throws Exception {
         Long reviewId = saveReview();
+        Member another = members.save(Member.create("another@test.com", "another", "unused"));
         mvc.perform(delete("/api/v1/reviews/{id}", reviewId)
-                        .with(jwt().jwt(token -> token.subject(Long.toString(memberId + 1)))))
+                        .with(jwt().jwt(token -> token.subject(another.getId().toString()))))
                 .andExpect(status().isForbidden());
         assertThat(reviews.existsById(reviewId)).isTrue();
     }
@@ -160,10 +188,9 @@ class ReviewRatingTests {
     }
 
     private Long saveReview() {
-        Review review = Review.builder()
-                .title("삭제 테스트").content("작성자 권한을 확인합니다.").rating(BigDecimal.ONE)
-                .author(members.findById(memberId).orElseThrow())
-                .category(categories.findById(categoryId).orElseThrow()).build();
+        Review review = Review.create(new ReviewRequest("삭제 테스트", "test product", textDocument("작성자 권한을 확인합니다."), BigDecimal.ONE,
+                null, null, null, null, null, null, null),
+                members.findById(memberId).orElseThrow(), categories.findById(categoryId).orElseThrow());
         review.addImage("reviews/main.png", 0);
         return reviews.saveAndFlush(review).getId();
     }
@@ -182,7 +209,7 @@ class ReviewRatingTests {
 
     private String requestBody(String rating) {
         return """
-                {"title":"평점 테스트","content":"소수 평점 저장 확인","rating":%s,"categoryId":%d}
+                {"product":"test product","title":"평점 테스트","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"소수 평점 저장 확인"}]}]},"rating":%s,"categoryId":%d}
                 """.formatted(rating, categoryId);
     }
 }

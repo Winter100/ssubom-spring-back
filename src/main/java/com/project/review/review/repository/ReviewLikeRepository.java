@@ -1,0 +1,72 @@
+package com.project.review.review.repository;
+
+import com.project.review.review.entities.ReviewLike;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Set;
+
+
+
+@Repository
+public interface ReviewLikeRepository extends JpaRepository<ReviewLike, Long> {
+    @Modifying
+    @Query("delete from ReviewLike rl where rl.member.id = :memberId")
+    void deleteAllByMemberId(@Param("memberId") Long memberId);
+
+    @Modifying
+    @Query("delete from ReviewLike rl where rl.review.id = :reviewId")
+    void deleteAllByReviewId(@Param("reviewId") Long reviewId);
+
+    boolean existsByReviewIdAndMemberId(Long reviewId, Long memberId);
+
+    @Query("""
+                select rl.review.id
+                from ReviewLike rl
+                where rl.member.id = :memberId
+                and rl.review.id in (:reviewIds)
+            """)
+    Set<Long> findLikedReviewIds(
+            @Param("memberId") Long memberId,
+            @Param("reviewIds") List<Long> reviewIds
+    );
+
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = """
+                insert into reviews_like (member_id, review_id, created_at)
+                values (:memberId, :reviewId, CURRENT_TIMESTAMP)
+                on conflict (member_id, review_id) do nothing
+            """, nativeQuery = true)
+    void insertLike(@Param("memberId") Long memberId,
+                   @Param("reviewId") Long reviewId);
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = """
+            delete from ReviewLike rl
+            where rl.member.id = :memberId and rl.review.id = :reviewId
+            """)
+    void deleteLike(@Param("memberId") Long memberId,
+                   @Param("reviewId") Long reviewId);
+
+    Long countByReviewId(Long reviewId);
+
+    interface ReviewLikeCount {
+        Long getReviewId();
+        Long getLikeCount();
+    }
+
+    @Query(value = """
+            select rl.review.id reviewId, count(rl) likeCount
+            from  ReviewLike rl
+            where rl.review.id in :reviewIds
+            group by rl.review.id
+            """)
+    List<ReviewLikeCount> findLikeCounts(
+            @Param("reviewIds") List<Long> reviewIds
+    );
+}

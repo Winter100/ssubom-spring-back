@@ -27,7 +27,7 @@ import lombok.NoArgsConstructor;
                 name = "uk_review_images_review_order", columnNames = {"review_id", "display_order"}
         ),
         check = @CheckConstraint(
-                name = "ck_review_images_display_order", constraint = "display_order BETWEEN 0 AND 4"
+                name = "ck_review_images_display_order", constraint = "display_order BETWEEN 0 AND 10"
         )
 )
 @Getter
@@ -48,9 +48,8 @@ public class ReviewImage {
     @Column(name = "image_key", nullable = false, length = 1024)
     private String imageKey;
 
-    // 범위 제약과 리뷰별 순서의 유니크 제약으로 최대 5개 슬롯만 허용합니다.
     @Min(0)
-    @Max(4)
+    @Max(10)
     @Column(name = "display_order", nullable = false)
     private int displayOrder;
 

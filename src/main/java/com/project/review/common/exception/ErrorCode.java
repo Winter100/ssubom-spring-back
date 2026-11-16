@@ -8,15 +8,22 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor // final 필드 생성자 생성
 public enum ErrorCode {
 
+    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "댓글을 찾을 수 없습니다."),
+    COMMENT_DELETED(HttpStatus.CONFLICT, "삭제된 댓글은 변경할 수 없습니다."),
+
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다."), // 리뷰 조회 실패
+    REVIEW_UPDATE_CONFLICT(HttpStatus.CONFLICT, "리뷰가 변경되거나 삭제되었습니다. 새로 조회한 후 다시 시도해 주세요."),
     CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "카테고리를 찾을 수 없습니다."), // 카테고리 조회 실패
     CATEGORY_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 존재하는 카테고리명입니다."),
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."), // 회원 조회 실패
+    NICKNAME_CHANGE_NOT_ALLOWED(HttpStatus.CONFLICT, "닉네임은 마지막 변경 후 7일이 지나야 변경할 수 있습니다."),
     INVALID_AUTHENTICATION(HttpStatus.UNAUTHORIZED, "유효하지 않은 회원 인증 정보입니다."),
+    WITHDRAWAL_CONTENT_WRITE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "탈퇴 예약 중에는 댓글 작성·수정·삭제, 리뷰 작성·수정·삭제, 도움됐어요 변경을 할 수 없습니다. 마이페이지에서 탈퇴 예약을 취소해 주세요."),
+    WITHDRAWAL_PASSWORD_MISMATCH(HttpStatus.BAD_REQUEST, "현재 비밀번호가 일치하지 않습니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."), // 접근 권한 부족
-    REFRESH_NOT_FOUND(HttpStatus.UNAUTHORIZED, "리프레시 토큰이 없습니다. 다시 로그인해 주세요."),
-    REFRESH_UN_VALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 리프레시 토큰입니다. 다시 로그인해 주세요."),
-    REFRESH_EXPIRES(HttpStatus.UNAUTHORIZED, "리프레시 토큰이 만료되었습니다. 다시 로그인해 주세요."),
+    IMAGE_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "이미지 업로드 상태 또는 연결 기한이 변경되었습니다."),
+    REFRESH_INVALID(HttpStatus.UNAUTHORIZED, "로그인이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요."),
+    AUTH_TOKEN_CONFLICT(HttpStatus.CONFLICT, "인증 정보가 다른 요청에 의해 변경되었습니다. 최신 인증 상태를 확인해 주세요."),
     NOT_FOUND(HttpStatus.NOT_FOUND, "");
 
     private final HttpStatus status; // HTTP 상태 코드
