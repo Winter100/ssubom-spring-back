@@ -13,6 +13,7 @@ import com.project.review.review.entities.Review;
 import com.project.review.review.entities.ReviewImageDelete;
 import com.project.review.review.repository.ReviewImageDeleteRepository;
 import com.project.review.review.repository.ReviewRepository;
+import com.project.review.review.repository.ReviewLikeRepository;
 import com.project.review.review.repository.ReviewViewRepository;
 import com.project.review.storage.service.StorageService;
 import jakarta.persistence.EntityManager;
@@ -24,6 +25,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
@@ -47,6 +49,7 @@ public class ReviewService {
     private final ReviewImageKeys reviewImageKeys;
     private final Clock imageDeletionClock;
     private final ReviewLikeService reviewLikeService;
+    private final ReviewLikeRepository reviewLikeRepository;
 
     /**
      * 1부터 시작하는 요청 페이지를 JPA의 0 기반 페이지로 변환합니다.
@@ -180,7 +183,7 @@ public class ReviewService {
         storageService.validateImagesForReview(imageKeys, member.getId());
 
         transactionTemplate.executeWithoutResult(status ->
-                saveReview(reviewRequest, member, category, imageKeys));
+                saveReview(reviewRequest, memberService.findByIdForContentWrite(memberId), category, imageKeys));
     }
 
     /**
@@ -218,12 +221,14 @@ public class ReviewService {
             if (!currentReview.getVersion().equals(expectedVersion)) {
                 throw new BusinessException(ErrorCode.REVIEW_UPDATE_CONFLICT);
             }
+            Category category = categoryService.findById(reviewUpdateRequest.categoryId());
+            memberService.findByIdForContentWrite(memberId);
             // 이미지 관계만 변경해도 버전을 증가시켜 다른 수정·삭제와의 충돌을 감지합니다.
             entityManager.lock(currentReview, LockModeType.OPTIMISTIC_FORCE_INCREMENT);
 
             storageService.attachIfPending(createImageKeys, memberId);
             reviewImageDeleteRepository.saveAll(deleteImages);
-            updateReview(currentReview, reviewUpdateRequest);
+            updateReview(currentReview, reviewUpdateRequest, category);
         });
     }
 
@@ -234,37 +239,49 @@ public class ReviewService {
      */
     @Transactional
     public void remove(Long reviewId, Long memberId) {
-        // 댓글 변경과 같은 리뷰 행을 먼저 잠가 삭제 중 새 댓글이 추가되지 않도록 합니다.
+        memberService.findByIdForContentWrite(memberId);
+        reviewImageDeleteRepository.saveAll(removeAndCollectImageKeys(reviewId, memberId).stream()
+                .map(this::newImageDeletion).toList());
+    }
+
+    /** 호출자는 반환된 이미지 키의 삭제 작업을 같은 트랜잭션에 기록해야 합니다. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Set<String> removeAndCollectImageKeys(Long reviewId, Long memberId) {
+        // 리뷰 행을 먼저 잠가 삭제 중 새 댓글이 추가되지 않도록 합니다.
         Review review = reviewRepository.findByIdForUpdate(reviewId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
 
         review.validateAuthor(memberId);
 
-        // 리뷰에서 이미지 키를 받고 삭제 테이블에 맞게 생성
-        List<ReviewImageDelete> deleteImages = reviewImageKeys.collect(review).stream()
-                .map(this::newImageDeletion)
-                .toList();
-
-        // Todo 이벤트로 이미지 삭제 테이블 등록 변경하기
-        reviewImageDeleteRepository.saveAll(deleteImages);
+        Set<String> imageKeys = reviewImageKeys.collect(review);
 
         // 리뷰 삭제
         commentRepository.deleteRepliesByReviewId(reviewId);
         commentRepository.deleteAllByReviewId(reviewId);
+        reviewLikeRepository.deleteAllByReviewId(reviewId);
         reviewRepository.delete(review);
+        return imageKeys;
     }
 
-    // 리뷰 "도움이 됐어요" 추가
+    /**
+     * 리뷰 "도움이 됐어요" 추가
+     */
     @Transactional
     public void insertLike(Long reviewId, Long memberId) {
+        memberService.findByIdForContentWrite(memberId);
         Review review = findReviewById(reviewId);
+
         reviewLikeService.insertLike(review.getId(), memberId);
     }
 
-    // 리뷰 "도움이 됐어요" 제거
+    /**
+     * 리뷰 "도움이 됐어요" 제거
+     */
     @Transactional
     public void deleteLike(Long reviewId, Long memberId) {
+        memberService.findByIdForContentWrite(memberId);
         Review review = findReviewById(reviewId);
+
         reviewLikeService.deleteLike(review.getId(), memberId);
     }
 
@@ -292,8 +309,7 @@ public class ReviewService {
         reviewRepository.save(review);
     }
 
-    private void updateReview(Review review, ReviewUpdateRequest reviewUpdateRequest) {
-        Category category = categoryService.findById(reviewUpdateRequest.categoryId());
+    private void updateReview(Review review, ReviewUpdateRequest reviewUpdateRequest, Category category) {
         review.updateDetails(
                 reviewUpdateRequest.title(),
                 reviewUpdateRequest.content(),

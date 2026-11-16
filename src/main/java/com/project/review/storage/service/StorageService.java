@@ -3,7 +3,7 @@ package com.project.review.storage.service;
 import com.project.review.common.exception.BusinessException;
 import com.project.review.common.exception.ErrorCode;
 import com.project.review.member.entities.Member;
-import com.project.review.member.service.MemberService;
+import com.project.review.member.repository.MemberRepository;
 import com.project.review.storage.constant.ImageContentType;
 import com.project.review.storage.dtos.ImageUploadBatchRequest;
 import com.project.review.storage.dtos.ImageUploadRequest;
@@ -36,6 +36,7 @@ import java.util.*;
 public class StorageService {
 
     private final ImageUploadRepository imageUploadRepository;
+    private final MemberRepository members;
     private final TransactionTemplate transactionTemplate;
     private final S3Presigner resigned; // URL 서명 객체
     private final S3Client s3Client;
@@ -48,6 +49,8 @@ public class StorageService {
 
     @Transactional
     public List<ImageUploadResponse> uploadUrls(ImageUploadBatchRequest batchRequest, Member member) {
+        member = members.findByIdForUpdate(member.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_AUTHENTICATION));
 
         // 응답 List
         List<ImageUploadResponse> responseList = new ArrayList<>();

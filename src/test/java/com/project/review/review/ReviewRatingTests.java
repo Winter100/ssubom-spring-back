@@ -165,8 +165,9 @@ class ReviewRatingTests {
     @Test
     void anotherMemberCannotDeleteReview() throws Exception {
         Long reviewId = saveReview();
+        Member another = members.save(Member.create("another@test.com", "another", "unused"));
         mvc.perform(delete("/api/v1/reviews/{id}", reviewId)
-                        .with(jwt().jwt(token -> token.subject(Long.toString(memberId + 1)))))
+                        .with(jwt().jwt(token -> token.subject(another.getId().toString()))))
                 .andExpect(status().isForbidden());
         assertThat(reviews.existsById(reviewId)).isTrue();
     }

@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.Instant;
 
 public interface CommentRepository extends JpaRepository<Comment, Long> {
     @EntityGraph(attributePaths = "author")
@@ -20,6 +21,14 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     List<Comment> findByParentIdInOrderByCreatedAtAscIdAsc(List<Long> parentIds);
 
     Optional<Comment> findByIdAndReviewId(Long id, Long reviewId);
+
+    @Modifying
+    @Query("""
+            update Comment c set c.deleted = true, c.author = null,
+                c.content = '삭제된 댓글입니다', c.updatedAt = :now
+            where c.author.id = :memberId
+            """)
+    void anonymizeByAuthorId(@Param("memberId") Long memberId, @Param("now") Instant now);
 
     @Modifying
     @Query("delete from Comment c where c.review.id = :reviewId and c.parent is not null")

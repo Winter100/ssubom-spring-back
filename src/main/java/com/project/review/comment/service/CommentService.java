@@ -54,8 +54,8 @@ public class CommentService {
     }
 
     public CommentResponse create(Long reviewId, CommentCreateRequest request, Long memberId) {
+        Member author = members.findByIdForContentWrite(memberId);
         Review review = lockReview(reviewId);
-        Member author = members.findById(memberId);
         Comment parent = null;
         if (request.parentId() != null) {
             Comment target = findComment(reviewId, request.parentId());
@@ -80,6 +80,7 @@ public class CommentService {
     }
 
     private Comment findEditableComment(Long reviewId, Long commentId, Long memberId) {
+        members.findByIdForContentWrite(memberId);
         lockReview(reviewId);
         Comment comment = findComment(reviewId, commentId);
 

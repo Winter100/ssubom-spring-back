@@ -42,7 +42,6 @@ public class MemberController {
         return ResponseEntity.ok().body(reviewService.findByMyReviewCount(memberId));
     }
 
-    // Todo 내 정보 업데이트
     @PostMapping
     public void updateMe(
             @Valid @RequestBody MemberUpdateRequest memberUpdateRequest,

@@ -4,6 +4,7 @@ import com.project.review.review.entities.ImageDeleteStatus;
 import com.project.review.review.entities.ReviewImageDelete;
 import com.project.review.review.repository.ReviewImageDeleteRepository;
 import com.project.review.review.repository.ReviewRepository;
+import com.project.review.member.repository.MemberRepository;
 import com.project.review.storage.dtos.ImageDeletionResult;
 import com.project.review.storage.service.StorageService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
 public class ReviewImageCleanup {
     private final ReviewImageDeleteRepository deletions;
     private final ReviewRepository reviews;
+    private final MemberRepository members;
     private final ReviewImageKeys imageKeys;
     private final StorageService storage;
     private final TransactionTemplate transactions;
@@ -113,6 +115,7 @@ public class ReviewImageCleanup {
 
     private Set<String> findReferences(Set<String> candidates) {
         Set<String> referenced = new HashSet<>(reviews.findReferencedImageKeys(candidates));
+        referenced.addAll(members.findReferencedProfileImageKeys(candidates));
         long afterId = 0;
         // ponytail: 본문을 페이지 단위로 검사합니다. 데이터가 커지면 이미지 참조 인덱스 테이블로 전환합니다.
         while (referenced.size() < candidates.size()) {

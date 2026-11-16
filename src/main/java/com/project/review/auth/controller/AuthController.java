@@ -3,6 +3,12 @@ package com.project.review.auth.controller;
 import com.project.review.auth.dtos.*;
 import com.project.review.auth.service.AuthService;
 import com.project.review.member.dtos.MemberResponse;
+import com.project.review.member.dtos.WithdrawalRequest;
+import com.project.review.member.dtos.WithdrawalResponse;
+import com.project.review.member.service.MemberWithdrawalService;
+import com.project.review.auth.service.TokenService;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,19 +21,33 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Duration;
 import java.time.Instant;
 
-/**
- * Auth 에서 하는 것
- * - 로그인
- * - 로그아웃
- * - 회원가입
- * - 토큰 재발급
- */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
     private final AuthService authService;
+    private final MemberWithdrawalService withdrawals;
+    private final TokenService tokenService;
+
+    @PostMapping("/withdrawal")
+    public ResponseEntity<WithdrawalResponse> requestWithdrawal(
+            @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody WithdrawalRequest request) {
+        WithdrawalResponse response = withdrawals.request(tokenService.extractMemberId(jwt), request.password());
+        return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").body(response);
+    }
+
+    @GetMapping("/withdrawal")
+    public ResponseEntity<WithdrawalResponse> findWithdrawal(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(withdrawals.find(tokenService.extractMemberId(jwt)));
+    }
+
+    @DeleteMapping("/withdrawal")
+    public ResponseEntity<Void> cancelWithdrawal(@AuthenticationPrincipal Jwt jwt) {
+        withdrawals.cancel(tokenService.extractMemberId(jwt));
+        return ResponseEntity.noContent().build();
+    }
 
     // 로그인
     @PostMapping("/login")

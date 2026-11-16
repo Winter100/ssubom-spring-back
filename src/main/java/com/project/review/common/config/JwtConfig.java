@@ -1,6 +1,8 @@
 package com.project.review.common.config;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import com.project.review.auth.service.ExistingMemberValidator;
+import com.project.review.member.repository.MemberRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,6 +44,7 @@ public class JwtConfig {
     @Primary
     public JwtDecoder jwtDecoder (
             SecretKey jwtKey,
+            MemberRepository members,
             @Value("${security.jwt.issuer}")
             String issuer
     ){
@@ -53,7 +56,8 @@ public class JwtConfig {
         // 리프레시 토큰을 Bearer 액세스 토큰으로 사용하는 요청은 거절합니다.
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
                 JwtValidators.createDefaultWithIssuer(issuer),
-                new JwtClaimValidator<String>("token_type", "access"::equals)
+                new JwtClaimValidator<String>("token_type", "access"::equals),
+                new ExistingMemberValidator(members)
         ));
 
         return decoder;

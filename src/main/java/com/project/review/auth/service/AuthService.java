@@ -43,6 +43,7 @@ public class AuthService {
                 )
         );
         Member member = memberService.findByEmail(authentication.getName());
+        member = memberService.findByIdForWrite(member.getId());
         String accessToken = tokenService.createAccessToken(member);
         String refreshToken = tokenService.createRefreshToken(member);
         String tokenHash = tokenService.hashRefreshToken(refreshToken);
@@ -103,7 +104,7 @@ public class AuthService {
             throw new RefreshTokenException(ErrorCode.REFRESH_INVALID);
         }
 
-        Member member = storedToken.getMember();
+        Member member = memberService.findByIdForWrite(storedToken.getMember().getId());
 
         Instant expiresAt = jwt.getExpiresAt().isBefore(storedToken.getExpiresAt())
                 ? jwt.getExpiresAt()

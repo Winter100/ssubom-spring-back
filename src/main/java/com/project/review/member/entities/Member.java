@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * ID
@@ -30,7 +31,9 @@ import java.util.List;
  */
 
 @Entity
-@Table(name = "members", uniqueConstraints = {
+@Table(name = "members", indexes = {
+        @Index(name = "idx_members_withdrawal_scheduled", columnList = "withdrawal_scheduled_at")
+}, uniqueConstraints = {
         @UniqueConstraint(name = "uk_members_email", columnNames = "email"),
         @UniqueConstraint(name = "uk_members_nickname", columnNames = "nickname")
 })
@@ -48,6 +51,10 @@ public class Member {
     private String nickname;
 
     private Instant nicknameChangedAt;
+
+    private Instant withdrawalRequestedAt;
+
+    private Instant withdrawalScheduledAt;
 
     @Column(nullable = false)
     private String password;
@@ -91,7 +98,29 @@ public class Member {
                 .build();
     }
 
-    public void changeName(String nickname, Instant changedAt) {
+    public boolean validateMember(Long memberId) {
+        return this.getId().equals(memberId);
+    }
+
+    public void requestWithdrawal(Instant requestedAt, Instant scheduledAt) {
+        if (withdrawalScheduledAt == null) {
+            withdrawalRequestedAt = requestedAt;
+            withdrawalScheduledAt = scheduledAt;
+        }
+    }
+
+    public void validateContentWriteAllowed() {
+        if (withdrawalScheduledAt != null) {
+            throw new BusinessException(ErrorCode.WITHDRAWAL_CONTENT_WRITE_NOT_ALLOWED);
+        }
+    }
+
+    public void cancelWithdrawal() {
+        withdrawalRequestedAt = null;
+        withdrawalScheduledAt = null;
+    }
+
+     public void changeName(String nickname, Instant changedAt) {
         if (this.nicknameChangedAt != null && changedAt.isBefore(this.nicknameChangedAt.plus(Duration.ofDays(7)))) {
             throw new BusinessException(ErrorCode.NICKNAME_CHANGE_NOT_ALLOWED);
         }
@@ -104,5 +133,16 @@ public class Member {
         if (StringUtils.hasText(profileImage)) {
             this.profileImage = profileImage;
         }
+    }
+
+    public boolean hasProfileImage(){
+        return StringUtils.hasText(profileImage);
+    }
+
+    public boolean isSameName(String name){
+        return nickname.equals((name));
+    }
+    public boolean isSameProfileImage(String updateImage) {
+        return Objects.equals(profileImage, updateImage);
     }
 }

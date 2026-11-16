@@ -15,14 +15,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +32,7 @@ public class MemberService {
     private final StorageService storageService;
     private final ReviewImageDeleteRepository reviewImageDeleteRepository;
     private final Clock clock;
+    private final TransactionTemplate transactions;
 
     @Transactional
     public MemberResponse create(SignupRequest request) {
@@ -49,32 +49,34 @@ public class MemberService {
         return MemberResponse.from(memberRepository.save(member));
     }
 
-    @Transactional
-    public void updateMe(Long memberId, MemberUpdateRequest memberUpdateRequest) {
+    public void updateMe(Long memberId, MemberUpdateRequest req) {
+        // 외부 스토리지 검증을 마친 후에만 회원 행을 잠급니다.
+        Member before = findById(memberId);
+        if (req.hasProfileImage() && !before.isSameProfileImage(req.profileImage())) {
+            storageService.validateImagesForReview(List.of(req.profileImage()), memberId);
+        }
+        transactions.executeWithoutResult(status -> updateMember(memberId, req));
+    }
+
+    private void updateMember(Long memberId, MemberUpdateRequest req) {
         Member member = memberRepository.findByIdForUpdate(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
 
-        String updateNickname = memberUpdateRequest.nickName();
-        String updateProfileImage = memberUpdateRequest.profileImage();
-
-        // 닉네임 변경 (7일)
-        if (StringUtils.hasText(updateNickname) && !member.getNickname().equals(updateNickname)) {
-            existsNickname(updateNickname);
+        // 닉네임 변경 (7일) 제한
+        if (req.hasName() && !member.isSameName(req.nickName())) {
+            existsNickname(req.nickName());
             Instant now = clock.instant();
-            member.changeName(updateNickname, now);
+            member.changeName(req.nickName(), now);
         }
 
-        if (updateProfileImage != null
-                && !updateProfileImage.isBlank()
-                && !Objects.equals(member.getProfileImage(), updateProfileImage)
-        ) {
-            storageService.validateImagesForReview(List.of(memberUpdateRequest.profileImage()), member.getId());
-            storageService.attachIfPending(List.of(updateProfileImage), member.getId());
+        // 프로필 이미지 변경
+        if (req.hasProfileImage() && !member.isSameProfileImage(req.profileImage())) {
+            storageService.attachIfPending(List.of(req.profileImage()), member.getId());
 
-            if (member.getProfileImage() != null && !member.getProfileImage().isBlank()) {
+            if (member.hasProfileImage()) {
                 reviewImageDeleteRepository.save(new ReviewImageDelete(member.getProfileImage()));
             }
-            member.changeProfileImage(updateProfileImage);
+            member.changeProfileImage(req.profileImage());
         }
     }
 
@@ -88,6 +90,20 @@ public class MemberService {
     public Member findById(Long memberId) {
         return memberRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
+    }
+
+    // 회원을 참조하는 쓰기 트랜잭션은 탈퇴 삭제와 같은 행 잠금을 사용합니다.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Member findByIdForWrite(Long memberId) {
+        return memberRepository.findByIdForUpdate(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_AUTHENTICATION));
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Member findByIdForContentWrite(Long memberId) {
+        Member member = findByIdForWrite(memberId);
+        member.validateContentWriteAllowed();
+        return member;
     }
 
     private void existsEmail(String email) {

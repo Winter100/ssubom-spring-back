@@ -5,18 +5,22 @@ import com.project.review.common.exception.ErrorCode;
 import com.project.review.member.dtos.MemberUpdateRequest;
 import com.project.review.member.dtos.MemberResponse;
 import com.project.review.member.entities.Member;
+import com.project.review.member.exception.DuplicateMemberException;
 import com.project.review.member.repository.MemberRepository;
 import com.project.review.member.service.MemberService;
 import com.project.review.review.repository.ReviewImageDeleteRepository;
 import com.project.review.storage.service.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -71,6 +75,63 @@ class MemberUpdateTests {
         assertThat(updated.getNickname()).isEqualTo("new-name");
         assertThat(updated.getNicknameChangedAt()).isEqualTo(NOW);
         assertThat(MemberResponse.from(updated).nicknameChangedAt()).isEqualTo(NOW);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"  new name  ", "new\tna\nme", "new\u00a0na\u3000me"})
+    void removesAllWhitespaceBeforeSavingNickname(String nickname) {
+        service.updateMe(member.getId(), new MemberUpdateRequest(nickname, null));
+
+        Member updated = members.findById(member.getId()).orElseThrow();
+        assertThat(updated.getNickname()).isEqualTo("newname");
+        assertThat(updated.getNicknameChangedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void checksDuplicateNicknameAfterRemovingWhitespace() {
+        members.saveAndFlush(Member.create("other@example.com", "newname", "unused"));
+
+        assertThatThrownBy(() -> service.updateMe(member.getId(), new MemberUpdateRequest("new name", null)))
+                .isInstanceOf(DuplicateMemberException.class);
+        assertThat(members.findById(member.getId()).orElseThrow().getNickname()).isEqualTo("original");
+    }
+
+    @Test
+    void sameNicknameAfterRemovingWhitespaceDoesNotChangeCooldown() {
+        Instant changedAt = NOW.minusSeconds(60);
+        setLastChange(changedAt);
+
+        service.updateMe(member.getId(), new MemberUpdateRequest(" ori ginal ", null));
+
+        Member updated = members.findById(member.getId()).orElseThrow();
+        assertThat(updated.getNickname()).isEqualTo("original");
+        assertThat(updated.getNicknameChangedAt()).isEqualTo(changedAt);
+    }
+
+    @Test
+    void memberApiNormalizesNicknameBeforeValidation() throws Exception {
+        mvc.perform(post("/api/v1/member")
+                        .with(jwt().jwt(token -> token.subject(member.getId().toString())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickName\":\" new \\tna\\nme \"}"))
+                .andExpect(status().isOk());
+
+        assertThat(members.findById(member.getId()).orElseThrow().getNickname()).isEqualTo("newname");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " \t\n", "\u00a0\u3000"})
+    void memberApiRejectsNicknameContainingOnlyWhitespace(String nickname) throws Exception {
+        String body = JsonMapper.builder().build()
+                .writeValueAsString(new MemberUpdateRequest(nickname, null));
+
+        mvc.perform(post("/api/v1/member")
+                        .with(jwt().jwt(token -> token.subject(member.getId().toString())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        assertThat(members.findById(member.getId()).orElseThrow().getNickname()).isEqualTo("original");
     }
 
     @Test

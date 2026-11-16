@@ -13,6 +13,13 @@ import java.util.Set;
 
 public interface ImageUploadRepository extends JpaRepository<ImageUploadStatus, Long> {
 
+    @Query("select u.imageKey from ImageUploadStatus u where u.member.id = :memberId")
+    List<String> findImageKeysByMemberId(@Param("memberId") Long memberId);
+
+    @Modifying
+    @Query("delete from ImageUploadStatus u where u.member.id = :memberId")
+    void deleteAllByMemberId(@Param("memberId") Long memberId);
+
     @Modifying
     @Query("""
             update ImageUploadStatus upload set upload.status = :expired

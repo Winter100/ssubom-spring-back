@@ -14,6 +14,14 @@ import java.util.Set;
 
 @Repository
 public interface ReviewLikeRepository extends JpaRepository<ReviewLike, Long> {
+    @Modifying
+    @Query("delete from ReviewLike rl where rl.member.id = :memberId")
+    void deleteAllByMemberId(@Param("memberId") Long memberId);
+
+    @Modifying
+    @Query("delete from ReviewLike rl where rl.review.id = :reviewId")
+    void deleteAllByReviewId(@Param("reviewId") Long reviewId);
+
     boolean existsByReviewIdAndMemberId(Long reviewId, Long memberId);
 
     @Query("""

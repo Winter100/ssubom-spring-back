@@ -23,6 +23,9 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     @Query("select r from Review r where r.id = :id")
     Optional<Review> findByIdForUpdate(@Param("id") Long id);
 
+    @Query("select r.id from Review r where r.author.id = :memberId and r.id > :afterId order by r.id")
+    List<Long> findIdsByAuthor(@Param("memberId") Long memberId, @Param("afterId") Long afterId, Pageable pageable);
+
     interface ContentReference {
         Long getId();
 
