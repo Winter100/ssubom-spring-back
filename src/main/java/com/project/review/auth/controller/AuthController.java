@@ -9,7 +9,6 @@ import com.project.review.member.service.MemberWithdrawalService;
 import com.project.review.auth.service.TokenService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -52,16 +51,15 @@ public class AuthController {
     // 로그인
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(
-            @Valid @RequestBody LoginRequest loginRequest,
-            HttpServletRequest request
+            @Valid @RequestBody LoginRequest loginRequest
     ) {
 
         LoginResult result = authService.login(loginRequest);
 
         ResponseCookie cookie = ResponseCookie.from("refreshToken", result.refreshToken())
                 .httpOnly(true)
-                .secure(request.isSecure())
-                .sameSite("Lax")
+                .secure(true)
+                .sameSite("None")
                 .path("/api/v1/auth")
                 .maxAge(result.lifetime())
                 .build();
@@ -85,16 +83,15 @@ public class AuthController {
     // 로그아웃
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
-            @CookieValue(name="refreshToken", required = false) String refreshToken,
-            HttpServletRequest request
+            @CookieValue(name="refreshToken", required = false) String refreshToken
     ){
 
         authService.logout(refreshToken);
 
         ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
                 .httpOnly(true)
-                .secure(request.isSecure())
-                .sameSite("Lax")
+                .secure(true)
+                .sameSite("None")
                 .path("/api/v1/auth")
                 .maxAge(0)
                 .build();
@@ -108,16 +105,15 @@ public class AuthController {
     // 리프레쉬를 통한 토큰 재발급
     @PostMapping("refresh")
     public ResponseEntity<TokenResponse> renewToken(
-            @CookieValue(name = "refreshToken" , required = false) String refreshToken,
-            HttpServletRequest request
+            @CookieValue(name = "refreshToken" , required = false) String refreshToken
     ){
         RefreshResult result = authService.refreshAccessToken(refreshToken);
 
         ResponseCookie cookie = ResponseCookie
                 .from("refreshToken", result.newRefreshToken())
                 .httpOnly(true)
-                .secure(request.isSecure())
-                .sameSite("Lax")
+                .secure(true)
+                .sameSite("None")
                 .path("/api/v1/auth")
                 .maxAge(Duration.between(Instant.now(), result.expiresAt()))
                 .build();
