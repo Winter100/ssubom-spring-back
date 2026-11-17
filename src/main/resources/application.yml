@@ -29,7 +29,7 @@ spring:
       # 요청 DTO와 동일한 Jackson 3 JsonNode로 JSON 컬럼을 변환합니다.
       hibernate.type.json_format_mapper: jackson3
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
 #    show-sql: true
 
 # R2 입력값은 프로젝트 루트 .env에 작성합니다. 입력 예시는 .env.example을 참고합니다.
