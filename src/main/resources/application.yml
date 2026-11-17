@@ -12,8 +12,8 @@ spring:
   config:
     import: "optional:file:./.env[.properties]" # 실행 디렉터리의 .env를 설정 파일로 읽습니다.
   datasource:
-#    url: jdbc:postgresql://${DB_HOST}:5432/${DB_NAME}?sslmode=require
-    url: jdbc:postgresql://${DB_HOST}:5432/${DB_NAME} # Docker PostgreSQL 접속 주소
+    url: jdbc:postgresql://${DB_HOST}:5432/${DB_NAME}?sslmode=require
+#    url: jdbc:postgresql://${DB_HOST}:5432/${DB_NAME} # Docker PostgreSQL 접속 주소
     username: ${DB_USERNAME} # POSTGRES_USER와 동일
     password: ${DB_PASSWORD}
   data:
