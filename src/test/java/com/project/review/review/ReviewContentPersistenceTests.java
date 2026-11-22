@@ -52,7 +52,7 @@ class ReviewContentPersistenceTests {
 
         Review loaded = reviews.findById(reviewId).orElseThrow();
         assertThat(loaded.getContent()).isEqualTo(content);
-        ReviewResponse response = ReviewResponse.from(loaded, new ReviewStats(0L, false, 0L));
+        ReviewResponse response = ReviewResponse.from(loaded, new ReviewStats(0L, false, 0L), false, false);
         JsonNode responseJson = mapper.readTree(mapper.writeValueAsString(response));
         assertThat(responseJson.path("content").isObject()).isTrue();
         assertThat(responseJson.path("content")).isEqualTo(content);

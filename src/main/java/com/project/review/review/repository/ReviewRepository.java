@@ -62,6 +62,7 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             where (:categoryId is null or c.id = :categoryId)
               and (:titleQuery = '' or locate(:titleQuery, r.title) > 0)
               and (:authorQuery = '' or a.nickname = :authorQuery)
+              and (:reviewId is null or r.id = :reviewId)
             """, countQuery = """
             select count(r)
             from Review r
@@ -70,11 +71,13 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             where (:categoryId is null or c.id = :categoryId)
               and (:titleQuery = '' or locate(:titleQuery, r.title) > 0)
               and (:authorQuery = '' or a.nickname = :authorQuery)
+              and (:reviewId is null or r.id = :reviewId)
             """)
     Page<ReviewSummaryResponse> findAllSummaries(
             @Param("categoryId") Long categoryId,
             @Param("titleQuery") String titleQuery,
             @Param("authorQuery") String authorQuery,
+            @Param("reviewId") Long reviewId,
             Pageable pageable
     );
 
@@ -111,10 +114,12 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             select c.id, c.category, count(r)
             from Category c
             left join c.reviews r on r.author.id = :memberId
-            group by c.id, c.category
-            order by c.id
+            group by c.id, c.category, c.displayOrder
+            order by c.displayOrder, c.id
             """)
     List<ReviewCategoryCountResponse> findCategoryCountsByAuthorId(
             @Param("memberId") Long memberId
     );
+
+    boolean existsByCategoryId(Long categoryId);
 }

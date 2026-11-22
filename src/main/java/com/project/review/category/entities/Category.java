@@ -30,6 +30,10 @@ public class Category {
     @Column
     private String description;
 
+    // 순서를 지정하기 전에는 기존 카테고리 뒤에 ID 순으로 배치합니다.
+    @Column(nullable = false)
+    private int displayOrder = Integer.MAX_VALUE;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -43,6 +47,10 @@ public class Category {
 
     public Category(String category) {
         changeCategory(category);
+    }
+
+    public void changeDisplayOrder(int displayOrder) {
+        this.displayOrder = displayOrder;
     }
 
     public void changeCategory(String category) {

@@ -16,6 +16,9 @@ spring:
 #    url: jdbc:postgresql://${DB_HOST}:5432/${DB_NAME} # Docker PostgreSQL 접속 주소
     username: ${DB_USERNAME} # POSTGRES_USER와 동일
     password: ${DB_PASSWORD}
+  flyway:
+    enabled: false # 운영에서 환경변수로 true 설정
+    baseline-on-migrate: false
   data:
     web:
       pageable:

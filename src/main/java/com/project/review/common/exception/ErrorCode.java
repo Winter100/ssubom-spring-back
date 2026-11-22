@@ -12,13 +12,24 @@ public enum ErrorCode {
     COMMENT_DELETED(HttpStatus.CONFLICT, "삭제된 댓글은 변경할 수 없습니다."),
 
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다."), // 리뷰 조회 실패
+    REVIEW_REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "같은 리뷰는 한국 시간 기준 하루에 한 번만 신고할 수 있습니다."),
+    REVIEW_REPORT_SELF_NOT_ALLOWED(HttpStatus.FORBIDDEN, "본인이 작성한 리뷰는 신고할 수 없습니다."),
+    REVIEW_REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "신고를 찾을 수 없습니다."),
+    REVIEW_REPORT_TYPE_NOT_FOUND(HttpStatus.NOT_FOUND, "신고 사유를 찾을 수 없습니다."),
+    REVIEW_REPORT_TYPE_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 존재하는 신고 사유입니다."),
+    REVIEW_REPORT_TYPE_ORDER_DUPLICATE_ID(HttpStatus.BAD_REQUEST, "신고 사유 ID는 한 번씩만 지정해야 합니다."),
+    REVIEW_REPORT_TYPE_ORDER_LIST_CHANGED(HttpStatus.CONFLICT, "신고 사유 목록을 다시 조회한 뒤 순서를 저장해 주세요."),
+    REVIEW_REPORT_TYPE_INACTIVE(HttpStatus.BAD_REQUEST, "현재 선택할 수 없는 신고 사유입니다."),
     REVIEW_UPDATE_CONFLICT(HttpStatus.CONFLICT, "리뷰가 변경되거나 삭제되었습니다. 새로 조회한 후 다시 시도해 주세요."),
     CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "카테고리를 찾을 수 없습니다."), // 카테고리 조회 실패
     CATEGORY_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 존재하는 카테고리명입니다."),
+    CATEGORY_IN_USE(HttpStatus.CONFLICT, "리뷰에서 사용 중인 카테고리는 삭제할 수 없습니다."),
+    CATEGORY_ORDER_DUPLICATE_ID(HttpStatus.BAD_REQUEST, "카테고리 ID는 한 번씩만 지정해야 합니다."),
+    CATEGORY_ORDER_LIST_CHANGED(HttpStatus.CONFLICT, "카테고리 목록을 다시 조회한 뒤 순서를 저장해 주세요."),
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."), // 회원 조회 실패
     NICKNAME_CHANGE_NOT_ALLOWED(HttpStatus.CONFLICT, "닉네임은 마지막 변경 후 7일이 지나야 변경할 수 있습니다."),
     INVALID_AUTHENTICATION(HttpStatus.UNAUTHORIZED, "유효하지 않은 회원 인증 정보입니다."),
-    WITHDRAWAL_CONTENT_WRITE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "탈퇴 예약 중에는 댓글 작성·수정·삭제, 리뷰 작성·수정·삭제, 도움됐어요 변경을 할 수 없습니다. 마이페이지에서 탈퇴 예약을 취소해 주세요."),
+    WITHDRAWAL_CONTENT_WRITE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "탈퇴 예약 중에는 댓글 작성·수정·삭제, 리뷰 작성·수정·삭제, 리뷰 신고, 도움됐어요 변경을 할 수 없습니다. 마이페이지에서 탈퇴 예약을 취소해 주세요."),
     WITHDRAWAL_PASSWORD_MISMATCH(HttpStatus.BAD_REQUEST, "현재 비밀번호가 일치하지 않습니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."), // 접근 권한 부족
     IMAGE_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "이미지 업로드 상태 또는 연결 기한이 변경되었습니다."),

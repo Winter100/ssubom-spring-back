@@ -86,7 +86,7 @@ public class Review {
     private Member author;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "category_id", nullable = false)
+    @JoinColumn(name = "category_id", nullable = false, foreignKey = @ForeignKey(name = "fk_reviews_category"))
     private Category category;
 
     // 리뷰 저장 시 이미지도 함께 저장하며, 리뷰 삭제 시 연결된 이미지 행을 삭제합니다.

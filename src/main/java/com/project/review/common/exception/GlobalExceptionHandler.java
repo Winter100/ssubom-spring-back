@@ -147,10 +147,21 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<CustomErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex) {
+    public ResponseEntity<CustomErrorResponse> handleDataIntegrity(
+            DataIntegrityViolationException ex, HttpServletRequest request) {
         for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
             if (cause instanceof ConstraintViolationException violation) {
                 String constraint = normalizeConstraintName(violation.getConstraintName());
+                if ("uk_review_report_types_name".equals(constraint)
+                        || constraint.matches("uk_review_report_types_name_index_[0-9a-f]+")) {
+                    return error(ErrorCode.REVIEW_REPORT_TYPE_ALREADY_EXISTS.getStatus(),
+                            ErrorCode.REVIEW_REPORT_TYPE_ALREADY_EXISTS.getMessage());
+                }
+                if ("uk_review_reports_daily".equals(constraint)
+                        || constraint.matches("uk_review_reports_daily_index_[0-9a-f]+")) {
+                    return error(ErrorCode.REVIEW_REPORT_ALREADY_EXISTS.getStatus(),
+                            ErrorCode.REVIEW_REPORT_ALREADY_EXISTS.getMessage());
+                }
                 // H2는 제약조건 대신 그 제약조건의 인덱스 이름을 반환할 수 있습니다.
                 if ("uk_categories_category".equals(constraint)
                         || constraint.matches("uk_categories_category_index_[0-9a-f]+")) {
@@ -159,6 +170,9 @@ public class GlobalExceptionHandler {
                 }
                 if ("uk_members_email".equals(constraint)) {
                     return error(HttpStatus.CONFLICT, "이미 가입된 이메일 입니다.");
+                }
+                if ("fk_reviews_category".equals(constraint) && "DELETE".equals(request.getMethod())) {
+                    return error(ErrorCode.CATEGORY_IN_USE.getStatus(), ErrorCode.CATEGORY_IN_USE.getMessage());
                 }
                 if ("uk_members_nickname".equals(constraint)) {
                     return error(HttpStatus.CONFLICT, "이미 생성된 닉네임 입니다.");
