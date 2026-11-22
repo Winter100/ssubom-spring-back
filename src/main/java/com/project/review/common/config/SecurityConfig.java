@@ -58,6 +58,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     // 서버 내부 오류 응답은 원래 상태 코드로 전달합니다.
                     auth.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                            .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                             .requestMatchers(HttpMethod.GET,
                                     "/api/v1/reviews/*/edit"
                                     ).authenticated()
@@ -104,7 +105,7 @@ public class SecurityConfig {
     ) {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of(frontendOrigin));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

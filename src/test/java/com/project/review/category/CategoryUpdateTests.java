@@ -4,6 +4,11 @@ import com.project.review.category.dtos.CategoryRequest;
 import com.project.review.category.entities.Category;
 import com.project.review.category.repository.CategoryRepository;
 import com.project.review.category.service.CategoryService;
+import com.project.review.member.entities.Member;
+import com.project.review.member.repository.MemberRepository;
+import com.project.review.review.dtos.ReviewRequest;
+import com.project.review.review.entities.Review;
+import com.project.review.review.repository.ReviewRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,15 +24,20 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doReturn;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** HTTP 검증과 서비스의 실제 커밋을 함께 확인합니다. 테스트 전체를 트랜잭션으로 감싸지 않습니다. */
@@ -37,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.jpa.hibernate.ddl-auto=create-drop",
+        "security.app.frontend-origin=https://frontend.example.com",
         "security.jwt.secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
         "security.jwt.access-token-expires-minutes=15",
         "security.jwt.refresh-token-expires-days=7",
@@ -57,11 +68,16 @@ class CategoryUpdateTests {
     private CategoryRepository categories;
     @Autowired
     private CategoryService service;
+    @Autowired
+    private MemberRepository members;
+    @MockitoSpyBean
+    private ReviewRepository reviews;
 
     private Long categoryId;
 
     @BeforeEach
     void setUp() {
+        reviews.deleteAll();
         categories.deleteAll();
         categoryId = categories.saveAndFlush(new Category("기존 이름")).getId();
     }
@@ -152,7 +168,7 @@ class CategoryUpdateTests {
 
     @Test
     void regularUserCannotUpdateCategory() throws Exception {
-        mvc.perform(patch("/api/v1/categories/{id}", categoryId)
+        mvc.perform(patch("/api/v1/admin/categories/{id}", categoryId)
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CategoryRequest("새 이름"))))
@@ -170,12 +186,12 @@ class CategoryUpdateTests {
     @Test
     void adminCanCreateCategoryAndDuplicateNameReturns409() throws Exception {
         String request = objectMapper.writeValueAsString(new CategoryRequest("새 카테고리"));
-        mvc.perform(post("/api/v1/categories")
+        mvc.perform(post("/api/v1/admin/categories")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON).content(request))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.category").value("새 카테고리"));
-        mvc.perform(post("/api/v1/categories")
+        mvc.perform(post("/api/v1/admin/categories")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON).content(request))
                 .andExpect(status().isConflict());
@@ -184,7 +200,7 @@ class CategoryUpdateTests {
 
     @Test
     void anonymousCannotCreateCategory() throws Exception {
-        mvc.perform(post("/api/v1/categories")
+        mvc.perform(post("/api/v1/admin/categories")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CategoryRequest("새 이름"))))
                 .andExpect(status().isUnauthorized());
@@ -193,12 +209,12 @@ class CategoryUpdateTests {
 
     @Test
     void regularUserCannotCreateOrDeleteCategory() throws Exception {
-        mvc.perform(post("/api/v1/categories")
+        mvc.perform(post("/api/v1/admin/categories")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CategoryRequest("새 이름"))))
                 .andExpect(status().isForbidden());
-        mvc.perform(delete("/api/v1/categories/{id}", categoryId)
+        mvc.perform(delete("/api/v1/admin/categories/{id}", categoryId)
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER"))))
                 .andExpect(status().isForbidden());
         assertThat(categories.existsById(categoryId)).isTrue();
@@ -206,14 +222,117 @@ class CategoryUpdateTests {
 
     @Test
     void adminCanDeleteUnusedCategory() throws Exception {
-        mvc.perform(delete("/api/v1/categories/{id}", categoryId)
+        mvc.perform(delete("/api/v1/admin/categories/{id}", categoryId)
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isNoContent());
         assertThat(categories.existsById(categoryId)).isFalse();
     }
 
+    @Test
+    void oldWriteRoutesAreRemoved() throws Exception {
+        var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        mvc.perform(post("/api/v1/categories").with(admin)).andExpect(status().isMethodNotAllowed());
+        mvc.perform(patch("/api/v1/categories/{id}", categoryId).with(admin)).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/v1/categories/{id}", categoryId).with(admin)).andExpect(status().isNotFound());
+        assertThat(categories.existsById(categoryId)).isTrue();
+    }
+
+    @Test
+    void adminOrderRoutesRejectAnonymousAndRegularUsers() throws Exception {
+        mvc.perform(get("/api/v1/admin/categories")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/categories").with(jwt())).andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/admin/categories/order")).andExpect(status().isUnauthorized());
+        mvc.perform(put("/api/v1/admin/categories/order").with(jwt())).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCategoryPatchPreflightAllowsConfiguredFrontend() throws Exception {
+        mvc.perform(options("/api/v1/admin/categories/{id}", categoryId)
+                        .header("Origin", "https://frontend.example.com")
+                        .header("Access-Control-Request-Method", "PATCH")
+                        .header("Access-Control-Request-Headers", "authorization,content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://frontend.example.com"));
+    }
+
+    @Test
+    void savedOrderIsSharedByListsAndMemberCountsAndNewCategoriesAppend() throws Exception {
+        Long secondId = categories.save(new Category("두 번째")).getId();
+        Long thirdId = categories.save(new Category("세 번째")).getId();
+        order("""
+                {"categoryIds":[%d,%d,%d]}
+                """.formatted(thirdId, categoryId, secondId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(thirdId));
+
+        service.create(new CategoryRequest("신규"));
+        for (String path : new String[]{"/api/v1/categories", "/api/v1/admin/categories"}) {
+            mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].id").value(thirdId))
+                    .andExpect(jsonPath("$[1].id").value(categoryId))
+                    .andExpect(jsonPath("$[2].id").value(secondId))
+                    .andExpect(jsonPath("$[3].category").value("신규"));
+        }
+        mvc.perform(get("/api/v1/member/count").with(jwt().jwt(token -> token.subject("1"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].categoryId").value(thirdId))
+                .andExpect(jsonPath("$[1].categoryId").value(categoryId))
+                .andExpect(jsonPath("$[2].categoryId").value(secondId))
+                .andExpect(jsonPath("$[3].category").value("신규"))
+                .andExpect(jsonPath("$[3].count").value(0));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{}", "{\"categoryIds\":null}", "{\"categoryIds\":[null]}",
+            "{\"categoryIds\":[0]}", "{\"categoryIds\":[-1]}", "{\"categoryIds\":[1,1]}"})
+    void invalidOrderReturns400(String request) throws Exception {
+        order(request).andExpect(status().isBadRequest());
+        assertThat(storedCategory().getDisplayOrder()).isEqualTo(Integer.MAX_VALUE);
+    }
+
+    @Test
+    void staleOrderReturns409WithoutPersistingPartialOrder() throws Exception {
+        order("""
+                {"categoryIds":[%d,%d]}
+                """.formatted(categoryId, Long.MAX_VALUE)).andExpect(status().isConflict());
+        order("{\"categoryIds\":[]}").andExpect(status().isConflict());
+        assertThat(storedCategory().getDisplayOrder()).isEqualTo(Integer.MAX_VALUE);
+    }
+
+    @Test
+    void emptyOrderIsAcceptedWhenThereAreNoCategories() throws Exception {
+        categories.deleteById(categoryId);
+        order("{\"categoryIds\":[]}").andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void referencedCategoryCannotBeDeletedEvenIfPrecheckMissesTheReview() throws Exception {
+        Member author = members.save(Member.create("category-author@example.com", "category-author", "unused"));
+        reviews.saveAndFlush(Review.create(new ReviewRequest("review", "product",
+                objectMapper.readTree("{\"type\":\"doc\",\"content\":[]}"), BigDecimal.ONE,
+                null, null, null, null, null, null, null), author, storedCategory()));
+        var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+
+        mvc.perform(delete("/api/v1/admin/categories/{id}", categoryId).with(admin))
+                .andExpect(status().isConflict());
+        doReturn(false).when(reviews).existsByCategoryId(categoryId);
+        mvc.perform(delete("/api/v1/admin/categories/{id}", categoryId).with(admin))
+                .andExpect(status().isConflict());
+        mvc.perform(delete("/api/v1/admin/categories/{id}", Long.MAX_VALUE).with(admin))
+                .andExpect(status().isNotFound());
+        assertThat(categories.existsById(categoryId)).isTrue();
+        assertThat(reviews.count()).isEqualTo(1);
+    }
+
+    private ResultActions order(String request) throws Exception {
+        return mvc.perform(put("/api/v1/admin/categories/order")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .contentType(MediaType.APPLICATION_JSON).content(request));
+    }
+
     private void update(Long id, String name, int expectedStatus) throws Exception {
-        ResultActions result = mvc.perform(patch("/api/v1/categories/{id}", id)
+        ResultActions result = mvc.perform(patch("/api/v1/admin/categories/{id}", id)
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CategoryRequest(name))))

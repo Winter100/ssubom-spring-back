@@ -1,5 +1,6 @@
 package com.project.review.member.dtos;
 
+import com.project.review.auth.entities.Role;
 import com.project.review.member.entities.Member;
 
 import java.time.Instant;
@@ -10,7 +11,8 @@ public record MemberResponse (
         String nickname,
         Instant createdAt,
         String profileImage,
-        Instant nicknameChangedAt
+        Instant nicknameChangedAt,
+        Role role
 ) {
 
     public static MemberResponse from(Member member){
@@ -20,7 +22,8 @@ public record MemberResponse (
                 member.getNickname(),
                 member.getCreatedAt(),
                 member.getProfileImage(),
-                member.getNicknameChangedAt()
+                member.getNicknameChangedAt(),
+                member.getRole()
         );
     }
 }

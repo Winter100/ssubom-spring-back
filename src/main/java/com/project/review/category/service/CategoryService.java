@@ -6,21 +6,28 @@ import com.project.review.category.entities.Category;
 import com.project.review.category.repository.CategoryRepository;
 import com.project.review.common.exception.BusinessException;
 import com.project.review.common.exception.ErrorCode;
+import com.project.review.review.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
+    private final ReviewRepository reviewRepository;
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> findAll() {
-        List<Category> categories = categoryRepository.findAllByOrderByIdAsc();
+        List<Category> categories = categoryRepository.findAllByOrderByDisplayOrderAscIdAsc();
         return categories.stream().map(CategoryResponse::from).toList();
     }
 
@@ -38,7 +45,7 @@ public class CategoryService {
 
     @Transactional
     public CategoryResponse update(Long categoryId, CategoryRequest categoryRequest) {
-        Category category = findById(categoryId);
+        Category category = findByIdForUpdate(categoryId);
         String categoryName = categoryRequest.category();
 
         // 이름이 같으면 중복 조회와 엔티티 변경을 생략하여 수정 시각을 유지합니다.
@@ -58,6 +65,38 @@ public class CategoryService {
 
     @Transactional
     public void remove(Long categoryId) {
-        categoryRepository.deleteById(categoryId);
+        Category category = findByIdForUpdate(categoryId);
+        if (reviewRepository.existsByCategoryId(categoryId)) {
+            throw new BusinessException(ErrorCode.CATEGORY_IN_USE);
+        }
+        categoryRepository.delete(category);
+    }
+
+    @Transactional
+    public List<CategoryResponse> reorder(List<Long> categoryIds) {
+        var requestedIds = new HashSet<>(categoryIds);
+        if (requestedIds.size() != categoryIds.size()) {
+            throw new BusinessException(ErrorCode.CATEGORY_ORDER_DUPLICATE_ID);
+        }
+
+        Map<Long, Category> categories = categoryRepository.findAllForUpdate().stream()
+                .collect(Collectors.toMap(Category::getId, Function.identity()));
+        if (!categories.keySet().equals(requestedIds)) {
+            throw new BusinessException(ErrorCode.CATEGORY_ORDER_LIST_CHANGED);
+        }
+
+        List<CategoryResponse> orderedCategories = new ArrayList<>(categoryIds.size());
+        int displayOrder = 1;
+        for (Long id : categoryIds) {
+            Category category = categories.get(id);
+            category.changeDisplayOrder(displayOrder++);
+            orderedCategories.add(CategoryResponse.from(category));
+        }
+        return orderedCategories;
+    }
+
+    private Category findByIdForUpdate(Long categoryId) {
+        return categoryRepository.findByIdForUpdate(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
     }
 }

@@ -28,10 +28,14 @@ public record ReviewResponse(
         MemberSummaryResponse author,
         long viewCount,
         boolean isLike,
-        Long likeCount
+        Long likeCount,
+        @Schema(description = "현재 로그인 회원이 이 리뷰를 한 번이라도 신고했는지 여부")
+        boolean isReported,
+        @Schema(description = "현재 로그인 회원이 한국 날짜 기준 오늘 이 리뷰를 신고했는지 여부")
+        boolean isReportedToday
 ) {
 
-    public static ReviewResponse from(Review review, ReviewStats stats) {
+    public static ReviewResponse from(Review review, ReviewStats stats, boolean isReported, boolean isReportedToday) {
         String mainImageKey = review.getImages().stream()
                 .filter(image -> image.getDisplayOrder() == 0)
                 .findFirst()
@@ -54,7 +58,9 @@ public record ReviewResponse(
                 MemberSummaryResponse.from(review.getAuthor()),
                 stats.viewCount(),
                 stats.isLike(),
-                stats.countLike()
+                stats.countLike(),
+                isReported,
+                isReportedToday
         );
     }
 }

@@ -8,6 +8,7 @@ import com.project.review.review.entities.ReviewImageDelete;
 import com.project.review.review.repository.ReviewImageDeleteRepository;
 import com.project.review.review.repository.ReviewLikeRepository;
 import com.project.review.review.repository.ReviewRepository;
+import com.project.review.review.repository.ReviewReportRepository;
 import com.project.review.review.service.ImageDeletionTime;
 import com.project.review.review.service.ReviewService;
 import com.project.review.storage.repository.ImageUploadRepository;
@@ -27,6 +28,7 @@ import java.util.Set;
 public class MemberDeletionService {
     private final MemberRepository members;
     private final ReviewRepository reviews;
+    private final ReviewReportRepository reports;
     private final ReviewService reviewService;
     private final CommentRepository comments;
     private final ReviewLikeRepository likes;
@@ -60,6 +62,7 @@ public class MemberDeletionService {
 
         Instant now = clock.instant();
         comments.anonymizeByAuthorId(memberId, now);
+        reports.anonymizeByReporterId(memberId);
         likes.deleteAllByMemberId(memberId);
         tokens.deleteAllByMemberId(memberId);
         uploads.deleteAllByMemberId(memberId);

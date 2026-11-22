@@ -13,6 +13,7 @@ import com.project.review.review.entities.Review;
 import com.project.review.review.entities.ReviewImageDelete;
 import com.project.review.review.repository.ReviewImageDeleteRepository;
 import com.project.review.review.repository.ReviewRepository;
+import com.project.review.review.repository.ReviewReportRepository;
 import com.project.review.review.repository.ReviewLikeRepository;
 import com.project.review.review.repository.ReviewViewRepository;
 import com.project.review.storage.service.StorageService;
@@ -24,17 +25,21 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
 import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 @Service
 @RequiredArgsConstructor
 public class ReviewService {
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final TransactionTemplate transactionTemplate;
     private final EntityManager entityManager;
@@ -43,11 +48,12 @@ public class ReviewService {
     private final CategoryService categoryService;
     private final StorageService storageService;
     private final ReviewRepository reviewRepository;
+    private final ReviewReportRepository reviewReportRepository;
     private final CommentRepository commentRepository;
     private final ReviewImageDeleteRepository reviewImageDeleteRepository;
     private final ReviewViewRepository reviewViewRepository;
     private final ReviewImageKeys reviewImageKeys;
-    private final Clock imageDeletionClock;
+    private final Clock clock;
     private final ReviewLikeService reviewLikeService;
     private final ReviewLikeRepository reviewLikeRepository;
 
@@ -56,6 +62,16 @@ public class ReviewService {
      */
     @Transactional(readOnly = true)
     public ReviewPageResponse findAll(int page, int size, String searchType, Long categoryId, String query, Long memberId) {
+        return findAll(page, size, searchType, categoryId, query, memberId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ReviewPageResponse findAll(
+            int page, int size, String searchType, Long categoryId, String query, Long memberId, Long reviewId
+    ) {
+        if (reviewId != null && reviewId < 1) {
+            throw new IllegalArgumentException("리뷰 ID는 양의 정수여야 합니다.");
+        }
         if (page < 1) {
             throw new IllegalArgumentException("페이지는 1 이상이어야 합니다.");
         }
@@ -75,9 +91,9 @@ public class ReviewService {
                 size,
                 Sort.by(Sort.Direction.DESC, "createdAt", "id")
         );
-        boolean hasSearchConditions = categoryId != null || searchQuery != null;
+        boolean hasSearchConditions = categoryId != null || searchQuery != null || reviewId != null;
         Page<ReviewSummaryResponse> reviews = hasSearchConditions
-                ? reviewRepository.findAllSummaries(categoryId, titleQuery, authorQuery, pageable)
+                ? reviewRepository.findAllSummaries(categoryId, titleQuery, authorQuery, reviewId, pageable)
                 : reviewRepository.findAllSummaries(pageable);
         return getReviewPageResponse(memberId, reviews);
     }
@@ -151,7 +167,15 @@ public class ReviewService {
         // 리뷰의 좋아요 수
         long countLike = reviewLikeService.countLike(reviewId);
 
-        return ReviewResponse.from(review, new ReviewStats(viewCount, isLike, countLike));
+        boolean isReported = memberId != null
+                && reviewReportRepository.existsByReviewIdAndReporterId(reviewId, memberId);
+        boolean isReportedToday = false;
+        if (isReported) {
+            LocalDate today = clock.instant().atZone(SEOUL).toLocalDate();
+            isReportedToday = reviewReportRepository.existsByReviewIdAndReporterIdAndReportDate(reviewId, memberId, today);
+        }
+
+        return ReviewResponse.from(review, new ReviewStats(viewCount, isLike, countLike), isReported, isReportedToday);
     }
 
     /**
@@ -244,6 +268,16 @@ public class ReviewService {
                 .map(this::newImageDeletion).toList());
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public void removeByAdmin(Long reviewId, Long adminMemberId) {
+        memberService.findByIdForContentWrite(adminMemberId);
+        Review review = reviewRepository.findByIdForUpdate(reviewId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
+        reviewImageDeleteRepository.saveAll(removeAndCollectImageKeys(review).stream()
+                .map(this::newImageDeletion).toList());
+    }
+
     /** 호출자는 반환된 이미지 키의 삭제 작업을 같은 트랜잭션에 기록해야 합니다. */
     @Transactional(propagation = Propagation.MANDATORY)
     public Set<String> removeAndCollectImageKeys(Long reviewId, Long memberId) {
@@ -253,9 +287,15 @@ public class ReviewService {
 
         review.validateAuthor(memberId);
 
+        return removeAndCollectImageKeys(review);
+    }
+
+    private Set<String> removeAndCollectImageKeys(Review review) {
+        Long reviewId = review.getId();
         Set<String> imageKeys = reviewImageKeys.collect(review);
 
         // 리뷰 삭제
+        reviewReportRepository.deleteAllByReviewId(reviewId);
         commentRepository.deleteRepliesByReviewId(reviewId);
         commentRepository.deleteAllByReviewId(reviewId);
         reviewLikeRepository.deleteAllByReviewId(reviewId);
@@ -357,7 +397,7 @@ public class ReviewService {
     }
 
     private ReviewImageDelete newImageDeletion(String key) {
-        return new ReviewImageDelete(key, ImageDeletionTime.nextMidnight(imageDeletionClock.instant()));
+        return new ReviewImageDelete(key, ImageDeletionTime.nextMidnight(clock.instant()));
     }
 
     private void addReviewImages(Review review, String mainImage, List<String> subImages) {

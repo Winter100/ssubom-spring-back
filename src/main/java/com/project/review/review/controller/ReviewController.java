@@ -44,7 +44,8 @@ public class ReviewController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         Long memberId = jwt != null ? tokenService.extractMemberId(jwt) : null;
-        return ResponseEntity.ok().body(reviewService.findByIdAndCountView(id, memberId));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(reviewService.findByIdAndCountView(id, memberId));
     }
 
     @GetMapping("/{id}/edit")
